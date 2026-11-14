@@ -6,6 +6,12 @@
 	default_sni 192.168.29.101
 }
 
+# Typo-catcher: plain http://<host>:8080 -> https://<host>:8085 (browsers
+# default to http when you type a bare IP). Host :80 itself is taken by NPM.
+:8080 {
+	redir https://{host}:8085{uri}
+}
+
 # Plain-HTTP twin for the compose `remote` profile (in-container Tailscale
 # terminates trusted TLS for the MagicDNS name and forwards here):
 #   docker compose --profile remote up -d

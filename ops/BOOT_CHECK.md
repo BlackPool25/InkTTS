@@ -11,15 +11,15 @@ docker compose up -d --build
 docker compose ps   # all Up; backend (healthy), authelia (healthy)
 
 # 2. First run only: extract the LAN CA (Caddy tls internal, one line per device)
-docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > ops/lan-ca.crt
+docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > ops/lan.crt
 # Install lan-ca.crt on the Android + PC browsers once (OS trust store).
 # Browse via https://inkcast.<dash-ip>.nip.io:8085 (resolves to the LAN IP,
 # zero DNS). Plain http is REJECTED by the Authelia 4.39 validator.
 
 # 3. Wall: anonymous API -> 403 (Authelia default_policy deny)
-curl -s --cacert ops/lan-ca.crt -o /dev/null -w '%{http_code}\n' \
-  https://inkcast.192-168-29-101.nip.io:8085/api/v1/books \
-  --resolve inkcast.192-168-29-101.nip.io:8085:192.168.29.101
+curl -s --cacert ops/lan.crt -o /dev/null -w '%{http_code}\n' \
+  https://192.168.29.101:8085/api/v1/books \
+  
 # expect: 302 to the portal
 
 # 4. Login (portal user `reader`; password minted at first boot, see
@@ -29,9 +29,9 @@ TOKEN=$(docker compose exec -T backend python -c \
   "from app.db import create_all; create_all(); from sqlmodel import Session; \
 from app.db import engine; from app.tokens import create_opds_token; \
 print(create_opds_token(Session(engine),'boot-check'))" | tail -1)
-curl -s --cacert ops/lan-ca.crt -o /dev/null -w '%{http_code}\n' \
-  "https://inkcast.192-168-29-101.nip.io:8085/api/v1/opds/catalog.xml?token=$TOKEN" \
-  --resolve inkcast.192-168-29-101.nip.io:8085:192.168.29.101
+curl -s --cacert ops/lan.crt -o /dev/null -w '%{http_code}\n' \
+  "https://192.168.29.101:8085/api/v1/opds/catalog.xml?token=$TOKEN" \
+  
 # expect: 200
 
 # 6. Direct :8000 without token -> 401 (never trusted, even on LAN)

@@ -5,6 +5,7 @@ services:
     ports:
       - "8085:8085"  # App: https://192.168.29.101:8085 (primary) + nip.io fallback
       - "8443:8443"  # Portal: https://192.168.29.101:8443 (primary) + nip.io fallback
+      - "8081:8080"  # Typo-catcher: http://<host>:8081 -> https://<host>:8085
       # No :443 listener: plain-LAN install has no domain/cert. Add it only
       # with a real hostname (then also flip Authelia cookie secure=true).
     volumes:
