@@ -20,7 +20,7 @@ docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > op
 curl -s --cacert ops/lan-ca.crt -o /dev/null -w '%{http_code}\n' \
   https://inkcast.192-168-29-101.nip.io:8085/api/v1/books \
   --resolve inkcast.192-168-29-101.nip.io:8085:192.168.29.101
-# expect: 403
+# expect: 302 to the portal
 
 # 4. Login (portal user `reader`; password minted at first boot, see
 #    "first-run password" below), then same URL -> 200 with session cookie
