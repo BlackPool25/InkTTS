@@ -5,5 +5,5 @@ users:
   reader:
     displayname: Reader
     email: reader@lan.local
-    hash: $argon2id$v=19$m=65536,t=3,p=4$REPLACE_ME_WITH_GENERATED_HASH
+    password: $argon2id$v=19$m=65536,t=3,p=4$REPLACE_ME_SEE_BOOTSTRAP
     groups: []

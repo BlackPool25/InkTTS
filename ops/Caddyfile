@@ -1,21 +1,21 @@
-# LAN entrypoint. Authelia login wall via forward-auth; app itself has no auth code.
+# LAN entrypoint over HTTPS (Caddy `tls internal` local CA).
+# Why https: Authelia 4.39 REQUIRES secure-scheme authelia_url +
+# default_redirection_url (validator rejects http) — plain-http LAN + login
+# wall is officially unsupported. nip.io names resolve to the LAN IP with
+# zero DNS setup; `*.192-168-29-101.nip.io` all -> 192.168.29.101.
+# One-time per device: install ops/lan-ca.crt (extracted from Caddy) so the
+# local CA is trusted. If DHCP changes the host IP, replace all three
+# occurrences of 192-168-29-101 below + the Authelia cookie URLs.
 {
-	auto_https off
+	auto_https ignore_loaded_certs
 }
 
-:80 {
-	# Authelia portal (login page) served directly
-	handle /authelia* {
-		reverse_proxy authelia:9091
-	}
-
-	# OPDS token exemption: e-readers can't log in. Long per-device token
-	# in the URL; humans still go through the wall. (Task 4/8 own the check.)
+# App: library + API + reader (behind the wall, OPDS token-exempt)
+https://inkcast.192-168-29-101.nip.io:8085 {
+	tls internal
 	handle /api/v1/opds* {
 		reverse_proxy backend:8000
 	}
-
-	# Everything else: must pass the login wall first
 	handle {
 		forward_auth authelia:9091 {
 			uri /api/authz/forward-auth
@@ -24,4 +24,9 @@
 		reverse_proxy backend:8000
 	}
 }
-# NOTE: no :443 block — plain-LAN install, no domain/cert (dead listener removed).
+
+# Authelia portal (login page) served directly
+https://auth.192-168-29-101.nip.io:8085 {
+	tls internal
+	reverse_proxy authelia:9091
+}

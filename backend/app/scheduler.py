@@ -105,6 +105,13 @@ def record_result(state: dict, source: str, ok: bool,
         entry["consec"] = 0
         entry.pop("quarantined", None)
         return False
+    if error_class == "impassable":
+        # Login-walled novel: terminal per novel. Never retry, never count
+        # toward source quarantine (the source is fine; this novel needs an
+        # account). UI reads the failed Job row's error_class.
+        entry["consec"] = 0
+        entry["impassable"] = True
+        return False
     if error_class in ("blocked", "empty"):
         entry["consec"] = int(entry.get("consec", 0)) + 1
         if entry["consec"] >= QUARANTINE_AFTER_N and not entry.get("quarantined"):

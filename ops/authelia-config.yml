@@ -7,12 +7,13 @@ server:
         implementation: ForwardAuth
 
 log:
-  level: info
+  level: debug
 
 storage:
   local:
     path: /config/db/storage.sqlite3
-  encryption_key: "{{ env \"AUTHELIA_STORAGE_ENCRYPTION_KEY\" }}"
+  # Key comes from AUTHELIA_STORAGE_ENCRYPTION_KEY env (compose) overriding this placeholder.
+  encryption_key: "change-me-set-via-env"
 
 authentication_backend:
   file:
@@ -23,24 +24,25 @@ authentication_backend:
 access_control:
   default_policy: deny
   rules:
-    - domain: "*"
+    - domain: '*.192-168-29-101.nip.io'
       policy: one_factor
 
-# 30-day sessions. secure:false + domain:"" is the http://LAN-IP profile:
-# browsers drop Secure cookies over plain http, so a secure=true profile
-# would lock you out with no error. If you add a real domain + :443,
-# flip secure to true and set the cookie domain to that host.
+# 30-day sessions over plain-http LAN. Authelia 4.39 has no per-cookie
+# `secure` key (scheme-derived); http LAN-IP works because the cookie is
+# issued without Secure. Domain MUST be non-empty (validator) — an IP works
+# for the validator; browsers store it host-only. If a browser ever refuses
+# the IP cookie, browse via http://<dash-ip>.nip.io:8085 instead and set
+# LAN_HOST to that name (same address, dotted hostname).
 session:
   name: inkcast_session
-  secret: "{{ env \"AUTHELIA_SESSION_SECRET\" }}"
+  secret: "change-me-set-via-env"
   expiration: 720h  # 30 days
   inactivity: 24h
   remember_me: 720h  # 30 days
   cookies:
-    - domain: ""
-      authelia_url: ""
-      default_redirection_url: "/"
-      secure: false
+    - domain: '192-168-29-101.nip.io'
+      authelia_url: "https://auth.192-168-29-101.nip.io:8085"
+      default_redirection_url: 'https://inkcast.192-168-29-101.nip.io:8085/'
       same_site: lax
 
 # Brute-force block: 3 strikes -> ban. Single user, no legit retry storms.
@@ -51,7 +53,7 @@ regulation:
 
 identity_validation:
   reset_password:
-    jwt_secret: "{{ env \"AUTHELIA_JWT_SECRET\" }}"
+    jwt_secret: "change-me-set-via-env"
 
 # Filesystem notifier: password-reset mails land here; no SMTP on LAN.
 notifier:

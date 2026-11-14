@@ -115,3 +115,14 @@ def test_challenge_output_is_blocked_not_transient():
     assert classify_error(1, "Cloudflare just a moment verify you are human") == "blocked"
     assert classify_error(1, "HTTP 429 too many requests") == "transient"
     assert classify_error(1, "No chapters to download") == "empty"
+
+
+def test_identity_gate_is_impassable_terminal(tmp_path):
+    # Live-observed L19: login-walled novel. Never retry, never quarantine.
+    out = "Impassable('L19 Identity-provider gate for https://x/: authentication required (HTTP 401)')"
+    assert classify_error(1, out) == "impassable"
+    from backend.app.scheduler import record_result
+    st: dict = {}
+    assert record_result(st, "src", False, "impassable") is False
+    assert st["src"].get("impassable") is True
+    assert not st["src"].get("quarantined")

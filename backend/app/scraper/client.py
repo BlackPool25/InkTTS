@@ -44,6 +44,11 @@ TRANSIENT_MARKS = ("429", "too many requests", "timeout", "timed out",
 SOLVER_MISSING_MARKS = ("solver missing", "no solver", "solver not ",
                         "solver unavailable", "solver failed to load")
 EMPTY_MARKS = ("no chapters", "0 chapters", "nothing to download", "not downloaded yet")
+# Live-observed 2026-11-14: L19 identity-provider gates (login-walled novels).
+# Terminal per novel: no retry burns, UI flags "source requires login".
+IMPASSABLE_MARKS = ("identity-provider gate", "l19",
+                    "authentication required", "login required",
+                    "account required", "behind an identity provider")
 
 
 class CrawlError(Exception):
@@ -75,9 +80,11 @@ def build_crawl_argv(url: str, first: int | None = None,
                      resume: bool = False, refresh: bool = False,
                      formats: tuple[str, ...] = ("json",),
                      rate_limit: float | None = None) -> list[str]:
-    """Non-interactive v4 argv: ``crawl URL --noin ...`` (entrypoint supplies
-    ``python -m lncrawl``). Scheduler ticks use --resume (= conditional fetch:
-    only chapters not already downloaded transfer)."""
+    """Non-interactive v4 argv: ``crawl URL --noin ...`` (run_crawl prefixes
+    ``docker exec <ctr> /app/.venv/bin/python -m lncrawl``: the image's system
+    python lacks deps, and PID 1 is `sleep infinity`). Scheduler ticks use
+    --resume (= conditional fetch: only chapters not already downloaded
+    transfer)."""
     argv = ["crawl", url, "--noin"]
     if all_:
         argv.append("--all")
@@ -101,6 +108,8 @@ def classify_error(returncode: int, output: str, timed_out: bool = False) -> str
     if timed_out:
         return "transient"
     low = (output or "").lower()
+    if any(m in low for m in IMPASSABLE_MARKS):
+        return "impassable"
     if any(sig in low for sig in CHALLENGE_SIGS) or "captcha" in low or "403" in low:
         return "blocked"
     if any(m in low for m in SOLVER_MISSING_MARKS):
@@ -210,8 +219,11 @@ def run_crawl(argv: list[str], job_id: int, timeout_s: float,
     SIGKILLed and CrawlTimeout raised, so no orphan crawl can later commit
     rows for a lease that already moved on.
     """
+    # 4.14.0 image: system python lacks deps (no typer); the venv python owns them.
+    # `sleep infinity` is PID 1, so exec must name the interpreter explicitly.
     prefix = list(exec_prefix) if exec_prefix is not None else [
-        "docker", "exec", LNCRAWL_CONTAINER]
+        "docker", "exec", LNCRAWL_CONTAINER,
+        "/app/.venv/bin/python", "-m", "lncrawl"]
     before = snapshot_dir(sidecar_mount)
     dest = job_dir(job_id, dest_base)
     proc = subprocess.Popen(prefix + argv, stdout=subprocess.PIPE,

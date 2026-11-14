@@ -8,6 +8,7 @@ their Task (2/3/6/7/8) and filled in there.
 import os
 import secrets
 import shutil
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
@@ -18,7 +19,17 @@ from sqlmodel import Session
 from . import db
 from .models import MODEL_VER, Job, Novel, Voice
 
-app = FastAPI(title="InkCast", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Single-file SQLite: ensure schema exists at boot. Alembic revisions
+    # remain the upgrade path; create_all is the idempotent baseline so a
+    # fresh /data/db boots green without manual migration.
+    db.create_all()
+    yield
+
+
+app = FastAPI(title="InkCast", version="1.0.0", lifespan=lifespan)
 
 try:  # Task 7/8 additive routers (frozen stubs below untouched).
     # Included BEFORE the stub defs so real handlers win routing order
