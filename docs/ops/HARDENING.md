@@ -175,3 +175,18 @@ EOF
 Evidence: `/tmp/abx/*.opus` + the filled score sheet (paste into `ops/ABX.md`
 run log). Without the model the stub tone is voice-identical — do NOT run
 ABX on stub output.
+
+## Live-verified 2026-11-14 (host-gated bringup, LAN 192.168.29.101)
+
+- Wall: `403` anon → `200` authed (login API + session cookie) through
+  Caddy `tls internal` nip.io. Portal `200`. Evidence: curl runs in BOOT_CHECK.
+- OPDS: `catalog.xml?token=` → `200` + XML with no login; bad token → `401`.
+- Sidecar: `LNCRAWL_DATA_PATH=/data` confirmed; exec via
+  `/app/.venv/bin/python -m lncrawl` (system python lacks deps).
+- Search egress: 48 sources, bot-fight/JS-challenge/auth-gate taxonomy
+  observed live → new `impassable` error class (no retry, no quarantine).
+- Probe crawl: novelbuddy chapter → `artifacts/*.json.zip` (98.9 KB, 3 entries);
+  content gate PASS on real 7177-char chapter (`-f json` avoids calibre step).
+- Backup: `POST /admin/backup` → `200` + sha256; `import_backup` restore
+  drill on copies → clean merge, zero orphans.
+- Pending (needs Kokoro weights): RTF bench, Range-206-on-real-audio, ABX.
