@@ -7,3 +7,5 @@ docker>=7.0
 httpx>=0.27
 cryptography>=42.0  # backup-ZIP Fernet (age binary path preferred when present)
 pytest>=8.0
+onnxruntime>=1.20
+numpy>=1.26

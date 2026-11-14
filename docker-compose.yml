@@ -37,7 +37,7 @@ services:
       lncrawl:
         condition: service_started
     volumes:
-      - ./backend/models:/app/models
+      - models:/data/models
       - ./frontend/dist:/app/frontend/dist:ro
       - ./data/db:/data/db                 # host-local disk ONLY (WAL breaks on NAS locks)
       - ./data/audio:/data/audio           # may live on NAS
@@ -103,3 +103,4 @@ volumes:
   caddy_config:
   authelia_data:
   lncrawl-data:
+  models:
