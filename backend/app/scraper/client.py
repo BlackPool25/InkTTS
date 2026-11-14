@@ -39,6 +39,10 @@ ARTIFACT_EXTS = (".epub", ".zip", ".json", ".txt")
 TRANSIENT_MARKS = ("429", "too many requests", "timeout", "timed out",
                    "connection reset", "temporarily", "service unavailable",
                    "bad gateway", "gateway timeout", "rate limit")
+# Challenge-solver absent from the sidecar image: quarantine the SOURCE
+# (blocked), never crash the tick — loud via the jobs row (Task 8 gate).
+SOLVER_MISSING_MARKS = ("solver missing", "no solver", "solver not ",
+                        "solver unavailable", "solver failed to load")
 EMPTY_MARKS = ("no chapters", "0 chapters", "nothing to download", "not downloaded yet")
 
 
@@ -98,6 +102,8 @@ def classify_error(returncode: int, output: str, timed_out: bool = False) -> str
         return "transient"
     low = (output or "").lower()
     if any(sig in low for sig in CHALLENGE_SIGS) or "captcha" in low or "403" in low:
+        return "blocked"
+    if any(m in low for m in SOLVER_MISSING_MARKS):
         return "blocked"
     if any(m in low for m in TRANSIENT_MARKS):
         return "transient"

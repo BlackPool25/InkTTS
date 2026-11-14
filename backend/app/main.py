@@ -20,6 +20,17 @@ from .models import MODEL_VER, Job, Novel, Voice
 
 app = FastAPI(title="InkCast", version="1.0.0")
 
+try:  # Task 7/8 additive routers (frozen stubs below untouched).
+    # Included BEFORE the stub defs so real handlers win routing order
+    # (Starlette matches first-registered first).
+    from .routes_playback import router as playback_router
+    app.include_router(playback_router)
+    from .routes_catalog import router as catalog_router
+    app.include_router(catalog_router)
+except Exception:  # noqa: BLE001 -- health + frozen paths stay up regardless
+    pass
+
+
 HEARTBEAT_PATH = os.environ.get(
     "SCHEDULER_HEARTBEAT_PATH", "/data/db/scheduler.heartbeat"
 )
