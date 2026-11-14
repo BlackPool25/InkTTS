@@ -31,12 +31,14 @@ SKIP_BASENAMES = ("meta.json", "toc.json", "cover.jpg", "cover.jpeg",
 
 
 def _ingest_files(session, job, source, state, files: list[str],
-                 novel_id: int | None = None) -> None:
+                 novel_id: int | None = None) -> bool:
     """Validate-then-commit over artifact FILES only (never stdout).
 
     Passing chapters are STORED (Chapter rows with text) and get synth jobs
     (inline text; coalesced by ref so retries never duplicate). All-gated-out
     batch -> fail the job LOUD. No novel_id (unattributable) -> validate only.
+    Returns True when the job reached a terminal state (done/failed);
+    False when there was nothing ingestible yet (caller keeps it running).
     """
     from . import jobs as _jobs
     from . import scheduler as _sched
@@ -64,7 +66,9 @@ def _ingest_files(session, job, source, state, files: list[str],
         first = failures[0]
         _jobs.fail(session, job.id, first.error_class, first.reason)
         _sched.record_result(state, source, False, first.error_class)
-        return
+        return True
+    if not texts:
+        return False  # nothing ingestible yet (e.g. only .zst cache grew)
     if novel_id is not None:
         have_hashes = {c.text_hash for c in session.exec(
             select(Chapter).where(Chapter.novel_id == novel_id)).all()}
@@ -99,6 +103,7 @@ def _ingest_files(session, job, source, state, files: list[str],
             nxt += 1
     _jobs.complete(session, job.id)
     _sched.record_result(state, source, True)
+    return True
 
 
 def _handle_crawl(session, job, *, state: dict, exec_prefix=None,

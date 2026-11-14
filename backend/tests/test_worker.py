@@ -191,3 +191,16 @@ def test_timeout_without_progress_fails_transient(tmp_path, monkeypatch, session
                     exec_prefix=["sh", "-c", "sleep 5", "--"], timeout_s=0.2)
     row = session.get(Job, job.id)
     assert row.status == "failed" and row.error_class == "transient"
+
+
+def test_ingest_empty_returns_unresolved_job_kept_running(tmp_path, session):
+    from backend.app import worker as W
+    from backend.app.models import Job
+    job = Job(kind="crawl", ref="novel:9:toc", status="running",
+              payload='{"novel_id": 9, "url": "https://example.com/n/9"}')
+    session.add(job)
+    session.commit()
+    resolved = W._ingest_files(session, job, "https://example.com/n/9", {},
+                               [], novel_id=9)
+    assert resolved is False
+    assert session.get(Job, job.id).status == "running"
