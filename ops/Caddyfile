@@ -1,3 +1,22 @@
+# Plain-HTTP twin for the compose `remote` profile (in-container Tailscale
+# terminates trusted TLS for the MagicDNS name and forwards here):
+#   docker compose --profile remote up -d
+# NOTE: enabling `remote` also requires flipping Authelia's cookie domain +
+# authelia_url/redirection to the ts.net origin (validator: https + parent
+# domain shared by app+portal). See ops/BOOT_CHECK.md "Tailscale remote".
+:80 {
+	handle /api/v1/opds* {
+		reverse_proxy backend:8000
+	}
+	handle {
+		forward_auth authelia:9091 {
+			uri /api/authz/forward-auth
+			copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+		}
+		reverse_proxy backend:8000
+	}
+}
+
 # LAN entrypoint over HTTPS (Caddy `tls internal` local CA).
 # Why https: Authelia 4.39 REQUIRES secure-scheme authelia_url +
 # default_redirection_url (validator rejects http) — plain-http LAN + login
