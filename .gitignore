@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+models/
+*.onnx
+*.bin
+data/db/
+data/audio/
+data/epubs/
+data/backups/
+.omo/
