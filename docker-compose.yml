@@ -42,7 +42,7 @@ services:
       - ./data/audio:/data/audio           # may live on NAS
       - ./data/epubs:/data/epubs
       - ./data/backups:/data/backups
-      - lncrawl-data:/data/lncrawl:ro      # sidecar artifacts ingested from here
+      - lncrawl-data:/data:ro      # sidecar writes /data; backend ingests from here
       # Backend drives the sidecar via `docker exec` (needs the socket).
       # Blast radius: socket = host-root equivalent. Accepted: single-user box,
       # Authelia wall in front, nothing published past Caddy. Alternative if this
@@ -70,7 +70,7 @@ services:
 
   # lncrawl sidecar: pinned image, idles; backend runs `docker exec` crawl jobs.
   # Volume is mounted at the sidecar's OWN data dir (~/.lncrawl resolved to
-  # /root/.lncrawl) — a bare /data mount ingests nothing (fixed LN-TTS bug #1).
+  # /root/.lncrawl) — a bare /data mount ingests nothing (4.14.0 ENV LNCRAWL_DATA_PATH=/data — Task 3 verified).
   # Concurrent execs share one browser profile: serialize challenge-solves
   # (max_instances=1 per origin) or use per-job profile dirs.
   lncrawl:
@@ -79,7 +79,7 @@ services:
     restart: unless-stopped
     command: ["sleep", "infinity"]
     volumes:
-      - lncrawl-data:/root/.lncrawl
+      - lncrawl-data:/data
 
   # Optional remote access: `docker compose --profile remote up -d`
   # Needs a free Tailscale account (one login, personal plan); no ports opened.
