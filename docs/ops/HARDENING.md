@@ -189,4 +189,8 @@ ABX on stub output.
   content gate PASS on real 7177-char chapter (`-f json` avoids calibre step).
 - Backup: `POST /admin/backup` → `200` + sha256; `import_backup` restore
   drill on copies → clean merge, zero orphans.
-- Pending (needs Kokoro weights): RTF bench, Range-206-on-real-audio, ABX.
+- VERIFIED 2026-11-14: RTF p50=0.368/p95=0.396 (gate PASS, real kokoro-v1.0.onnx,
+  OMP=2, same host CPU); real chapter 54 sents -> 421.86s Opus == manifest end;
+  5/5 test_tts_real green in-container (contract, voice table, loud-unknown,
+  smoke, stub-fallback). Pending: Range-206-on-real-audio vs served chapter
+  (needs a library chapter row), user ABX by ear (ops/ABX.md).
