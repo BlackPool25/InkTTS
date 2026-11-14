@@ -287,6 +287,20 @@ def list_jobs(authorization = Header(default=None)):
 
 
 # --- WS control-plane handshake (Task 15: WS control only, no PCM) ---------
+try:
+    from fastapi.staticfiles import StaticFiles
+
+    if os.path.isdir("/app/frontend/dist"):
+        # Mount LAST: /api/* + explicit routes above win; dist serves the
+        # PWA with SPA fallback. Missing dir (fresh clone) -> API-only boot.
+        app.mount("/", StaticFiles(directory="/app/frontend/dist",
+                                   html=True), name="pwa")
+    else:
+        print("WARN: /app/frontend/dist missing — run `npm run build` in frontend/ (API-only boot)")
+except Exception as e:  # noqa: BLE001 -- static UI is optional for API health
+    print(f"WARN: PWA mount skipped: {e}")
+
+
 @app.websocket("/api/v1/ws")
 async def ws_control(ws: WebSocket):
     await ws.accept()
