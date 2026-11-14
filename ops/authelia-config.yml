@@ -1,0 +1,59 @@
+# Authelia 4.39. Single-user LAN wall; app trusts this + per-request API_TOKEN.
+server:
+  address: tcp://:9091/
+  endpoints:
+    authz:
+      forward-auth:
+        implementation: ForwardAuth
+
+log:
+  level: info
+
+storage:
+  local:
+    path: /config/db/storage.sqlite3
+  encryption_key: "{{ env \"AUTHELIA_STORAGE_ENCRYPTION_KEY\" }}"
+
+authentication_backend:
+  file:
+    path: /config/users_database.yml
+    password:
+      algorithm: argon2
+
+access_control:
+  default_policy: deny
+  rules:
+    - domain: "*"
+      policy: one_factor
+
+# 30-day sessions. secure:false + domain:"" is the http://LAN-IP profile:
+# browsers drop Secure cookies over plain http, so a secure=true profile
+# would lock you out with no error. If you add a real domain + :443,
+# flip secure to true and set the cookie domain to that host.
+session:
+  name: inkcast_session
+  secret: "{{ env \"AUTHELIA_SESSION_SECRET\" }}"
+  expiration: 720h  # 30 days
+  inactivity: 24h
+  remember_me: 720h  # 30 days
+  cookies:
+    - domain: ""
+      authelia_url: ""
+      default_redirection_url: "/"
+      secure: false
+      same_site: lax
+
+# Brute-force block: 3 strikes -> ban. Single user, no legit retry storms.
+regulation:
+  max_retries: 3
+  find_time: 120s
+  ban_time: 300s
+
+identity_validation:
+  reset_password:
+    jwt_secret: "{{ env \"AUTHELIA_JWT_SECRET\" }}"
+
+# Filesystem notifier: password-reset mails land here; no SMTP on LAN.
+notifier:
+  filesystem:
+    filename: /config/db/notification.txt

@@ -1,0 +1,107 @@
+# InkCast frozen route table v1. UI, playback, and OPDS hardcode these paths.
+# Changing a path here is a cross-worker breaking change: update main.py,
+# the OpenReader fork wiring, and OPDS together.
+#
+# Locked shapes:
+# - Audio:  audio/{novel}/{shard}/{idx}.{hash8}.opus, shard = idx // 1000.
+#   Opus 32k mono 24kHz, Range/206, Accept-Ranges, immutable + ETag = render_key hash, If-Range.
+# - Sidecar: {idx}.{hash8}.json v2, sent_id positional, render_key = voice+speed+model,
+#   timings measured from shipped bytes, next.t_start == prev.t_end.
+# - API_TOKEN (fail-closed, secrets.compare_digest) on: all mutating routes,
+#   /admin/*, /jobs, WS handshake. OPDS uses per-device token exemption instead.
+openapi: 3.0.3
+info:
+  title: InkCast
+  version: 1.0.0
+paths:
+  /api/v1/health:
+    get:
+      summary: Deep health — db writability, disk free, scheduler heartbeat, queue depth, model_ver
+      responses:
+        '200': { description: all checks green }
+        '503': { description: degraded, body names the failing check }
+  /api/v1/books:
+    get:
+      summary: List novels (Authelia wall; no app token needed behind the wall)
+      responses:
+        '200': { description: Novel[] }
+  /api/v1/books/{id}/manifest:
+    get:
+      summary: Chapter manifest with render_keys + audio/sidecar URLs
+      responses:
+        '200': { description: manifest }
+  /api/v1/books/{id}/chapters/{n}:
+    get:
+      summary: Chapter text; ?format=json (default json)
+      responses:
+        '200': { description: chapter json }
+  /api/v1/books/{id}/chapters/{n}/audio.opus:
+    get:
+      summary: Immutable Opus bytes. Range/206, Accept-Ranges, ETag=render_key hash, If-Range
+      responses:
+        '200': { description: full body }
+        '206': { description: partial content }
+  /api/v1/books/{id}/chapters/{n}/chapter.json:
+    get:
+      summary: Sidecar v2 (sentences + timings from shipped bytes)
+      responses:
+        '200': { description: sidecar }
+  /api/v1/books/{id}/chapters/{n}/synthesize:
+    post:
+      summary: Enqueue (re-)synth. API_TOKEN required.
+      responses:
+        '202': { description: job id }
+        '401': { description: bad/missing token }
+  /api/v1/voices:
+    get:
+      summary: Voice list
+      responses:
+        '200': { description: Voice[] }
+    put:
+      summary: Set default voice. API_TOKEN required.
+      responses:
+        '200': { description: ok }
+        '401': { description: bad/missing token }
+  /api/v1/books/{id}/voice-map:
+    get:
+      summary: Per-character voice cast
+      responses:
+        '200': { description: VoiceMap[] }
+    put:
+      summary: Update cast. API_TOKEN required.
+      responses:
+        '200': { description: ok }
+  /api/v1/pron-dict:
+    get:
+      summary: Pronunciation dict
+      responses:
+        '200': { description: PronEntry[] }
+    put:
+      summary: Replace dict. API_TOKEN required.
+      responses:
+        '200': { description: ok }
+  /api/v1/opds/catalog.xml:
+    get:
+      summary: OPDS 1.2 catalog. Behind Caddy token-exemption path (no Authelia login).
+      responses:
+        '200': { description: OPDS XML }
+  /api/v1/opds/search:
+    get:
+      summary: OPDS search. Same exemption as catalog.
+      responses:
+        '200': { description: OPDS XML }
+  /api/v1/admin/backup:
+    post:
+      summary: Export encrypted backup ZIP. API_TOKEN required.
+      responses:
+        '202': { description: job id }
+  /api/v1/jobs:
+    get:
+      summary: Queue inspection. API_TOKEN required.
+      responses:
+        '200': { description: Job[] }
+  /api/v1/ws:
+    get:
+      summary: WS control-plane only (no PCM). ?token= API_TOKEN handshake, else close 4401.
+      responses:
+        '101': { description: switched protocols }
