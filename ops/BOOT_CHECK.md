@@ -1,45 +1,65 @@
-# BOOT_CHECK — Task 4 auth wall + ops boot proof
+# BOOT_CHECK — live-verified 2026-11-14 (host-gated bringup)
 
-Run from `/home/shreyas/projects/InkCast`. Needs `.env` filled (see
-`docs/ops/auth-wall.md` bootstrap).
+Run from `/home/shreyas/projects/InkCast`. Needs `.env` filled.
 
 ```bash
 # 0. Config valid (expect exit 0)
 docker compose config > /tmp/inkcast-config.yml && echo CONFIG_OK
 
-# 1. Boot
+# 1. Boot (backend rebuilds on code change; code is COPY'd, not bind-mounted)
 docker compose up -d --build
-docker compose ps
+docker compose ps   # all Up; backend (healthy), authelia (healthy)
 
-# 2. Wall: unauthenticated API -> 401 via Caddy forward-auth
-#    (expect 401, no backend JSON leak)
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/api/v1/books
+# 2. First run only: extract the LAN CA (Caddy tls internal, one line per device)
+docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > ops/lan-ca.crt
+# Install lan-ca.crt on the Android + PC browsers once (OS trust store).
+# Browse via https://inkcast.<dash-ip>.nip.io:8085 (resolves to the LAN IP,
+# zero DNS). Plain http is REJECTED by the Authelia 4.39 validator.
 
-# 3. Wall: login via Authelia, then same URL -> 200 with cookie jar
-#    (replace USER/PASS; session lasts 30 days)
-curl -s -c /tmp/jar -o /dev/null -w '%{http_code}\n' http://127.0.0.1/authelia/
-# complete login in browser at http://<host-lan-ip>/authelia, then:
-curl -s -b /tmp/jar -o /dev/null -w '%{http_code}\n' http://127.0.0.1/api/v1/books
+# 3. Wall: anonymous API -> 403 (Authelia default_policy deny)
+curl -s --cacert ops/lan-ca.crt -o /dev/null -w '%{http_code}\n' \
+  https://inkcast.192-168-29-101.nip.io:8085/api/v1/books \
+  --resolve inkcast.192-168-29-101.nip.io:8085:192.168.29.101
+# expect: 403
 
-# 4. OPDS token URL works without login (Wave 2 wired; expect 200 + XML)
+# 4. Login (portal user `reader`; password minted at first boot, see
+#    "first-run password" below), then same URL -> 200 with session cookie
+# 5. OPDS token URL works without login (expect 200 + XML); bad token -> 401
 TOKEN=$(docker compose exec -T backend python -c \
   "from app.db import create_all; create_all(); from sqlmodel import Session; \
 from app.db import engine; from app.tokens import create_opds_token; \
-print(create_opds_token(Session(engine), 'boot-check'))" | tail -1)
-curl -s -o /dev/null -w '%{http_code}\n' \
-  "http://127.0.0.1/api/v1/opds/catalog.xml?token=$TOKEN"
-# bad token -> 401
-curl -s -o /dev/null -w '%{http_code}\n' \
-  'http://127.0.0.1/api/v1/opds/catalog.xml?token=wrong'
+print(create_opds_token(Session(engine),'boot-check'))" | tail -1)
+curl -s --cacert ops/lan-ca.crt -o /dev/null -w '%{http_code}\n' \
+  "https://inkcast.192-168-29-101.nip.io:8085/api/v1/opds/catalog.xml?token=$TOKEN" \
+  --resolve inkcast.192-168-29-101.nip.io:8085:192.168.29.101
+# expect: 200
 
-# 5. Direct :8000 without token -> 401 (never trusted, even on LAN)
-docker compose exec -T backend python -c \
-  "import urllib.request, urllib.error; \
-urllib.request.urlopen('http://127.0.0.1:8000/api/v1/jobs')" 2>&1 | tail -1
-# expect: HTTP Error 401
-
-# 6. WS without token rejected (expect close 4401)
-docker compose exec -T backend python -c \
-  "import asyncio, websockets; \
-print(asyncio.run(websockets.connect('ws://127.0.0.1:8000/api/v1/ws')))" 2>&1 | tail -1
+# 6. Direct :8000 without token -> 401 (never trusted, even on LAN)
+# 7. WS without token -> close 4401
 ```
+
+## First-run password
+
+```bash
+BOOTPASS="inkcast-$(python3 -c 'import secrets;print(secrets.token_hex(3))')"
+echo "$BOOTPASS" > /tmp/inkcast-bootpass.txt   # hand to the user once
+docker run --rm authelia/authelia:4.39 authelia crypto hash generate argon2 \
+  --password "$BOOTPASS"   # take the $argon2... string
+# put it as `password:` for user `reader` in ops/users_database.yml
+# (tracked file is the `.example` template; the real one is git-ignored)
+docker compose restart authelia
+```
+
+## Validator findings (Authelia 4.39, do not regress)
+
+- `session.cookies[].secure` does not exist (scheme-derived); a `secure:`
+  line is a fatal config error, not a warning.
+- `domain` must be non-empty; `""` is fatal. IP literal passes the
+  validator but browsers + access-control want the dotted nip.io name.
+- `authelia_url` required once domain is valid; `default_redirection_url`
+  must be absolute https and differ from `authelia_url`.
+- `domain: "*"` matches NOTHING in 4.39; use the documented `*.` wildcard
+  (`*.192-168-29-101.nip.io`). Verify offline with
+  `docker compose exec authelia authelia access-control check-policy --url …`.
+- Users file key is `password:`, not `hash:` (else
+  `Users.reader.users: non zero value required` at startup).
