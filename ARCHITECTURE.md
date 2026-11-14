@@ -102,3 +102,19 @@ sequenceDiagram
 - Full-chapter re-synth on text change (no diff).
 - Voice/speed/model change pins old `render_key`; new renders only + explicit
   re-render button (no library storm).
+
+## Appendix — doc index (finale pass, existing diagrams above untouched)
+
+- Data model + sidecar v2 + storage invariants: `docs/data/model.md`
+- Render pipeline detail: `docs/flows/render.md`
+- Crawl lifecycle + refetch: `docs/flows/crawl.md`
+- Playback + progress holes: `docs/flows/playback.md`
+- Backup ZIP + merge: `docs/flows/backup.md`
+- Auth wall sequence: `docs/flows/auth.md` (operator notes: `docs/ops/auth-wall.md`)
+- OPDS catalog + M4B export: `docs/flows/opds-m4b.md`
+- Deployment (services/volumes/boot): `docs/flows/deployment.md`
+- Frozen route table: `docs/API.md` (source: `openapi.yaml`)
+- Every env var: `docs/ops/CONFIG.md`
+- Hardening gates with commands: `docs/ops/HARDENING.md`
+- Boot proof: `ops/BOOT_CHECK.md` (README quickstart matches its commands)
+- Voice shortlist procedure: `ops/ABX.md`
