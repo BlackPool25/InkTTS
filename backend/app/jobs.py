@@ -55,6 +55,8 @@ def claim_next(s: Session, kinds: list[str] | None = None) -> Job | None:
     cand = s.exec(q.order_by(Job.created_at)).first()
     if cand is None:
         return None
+    if not isinstance(cand, Job):
+        cand = cand[0]  # sqlalchemy select yields Row; unwrap the entity
     # max_instances=1 per kind
     busy_kind = s.scalar(select(func.count(Job.id)).where(
         Job.status == "running", Job.kind == cand.kind)) or 0

@@ -6,6 +6,7 @@ so UI/playback/OPDS can hardcode them; bodies returning 501 are owned by
 their Task (2/3/6/7/8) and filled in there.
 """
 import os
+import asyncio
 import hashlib
 import secrets
 import shutil
@@ -14,8 +15,8 @@ from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select
-from sqlmodel import Session
+from sqlalchemy import func
+from sqlmodel import Session, select
 
 from . import db
 from .models import MODEL_VER, Job, Novel, Voice
@@ -27,7 +28,12 @@ async def lifespan(app: FastAPI):
     # remain the upgrade path; create_all is the idempotent baseline so a
     # fresh /data/db boots green without manual migration.
     db.create_all()
-    yield
+    from . import worker as _worker
+    _worker_task = asyncio.create_task(_worker.run_forever())
+    try:
+        yield
+    finally:
+        _worker_task.cancel()
 
 
 app = FastAPI(title="InkCast", version="1.0.0", lifespan=lifespan)
@@ -286,21 +292,6 @@ def list_jobs(authorization = Header(default=None)):
         return s.exec(select(Job)).all()
 
 
-# --- WS control-plane handshake (Task 15: WS control only, no PCM) ---------
-try:
-    from fastapi.staticfiles import StaticFiles
-
-    if os.path.isdir("/app/frontend/dist"):
-        # Mount LAST: /api/* + explicit routes above win; dist serves the
-        # PWA with SPA fallback. Missing dir (fresh clone) -> API-only boot.
-        app.mount("/", StaticFiles(directory="/app/frontend/dist",
-                                   html=True), name="pwa")
-    else:
-        print("WARN: /app/frontend/dist missing — run `npm run build` in frontend/ (API-only boot)")
-except Exception as e:  # noqa: BLE001 -- static UI is optional for API health
-    print(f"WARN: PWA mount skipped: {e}")
-
-
 @app.websocket("/api/v1/ws")
 async def ws_control(ws: WebSocket):
     await ws.accept()
@@ -316,3 +307,18 @@ async def ws_control(ws: WebSocket):
             await ws.send_json({"ack": msg.get("cmd"), "status": "not-implemented-task7"})
     except WebSocketDisconnect:
         pass
+
+
+# --- PWA static mount (MUST stay last: "/" catch-all shadows later routes) ---
+try:
+    from fastapi.staticfiles import StaticFiles
+
+    if os.path.isdir("/app/frontend/dist"):
+        # Mount LAST: /api/* + explicit routes above win; dist serves the
+        # PWA with SPA fallback. Missing dir (fresh clone) -> API-only boot.
+        app.mount("/", StaticFiles(directory="/app/frontend/dist",
+                                   html=True), name="pwa")
+    else:
+        print("WARN: /app/frontend/dist missing — run `npm run build` in frontend/ (API-only boot)")
+except Exception as e:  # noqa: BLE001 -- static UI is optional for API health
+    print(f"WARN: PWA mount skipped: {e}")
