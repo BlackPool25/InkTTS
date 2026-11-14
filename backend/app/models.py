@@ -55,6 +55,7 @@ class Chapter(SQLModel, table=True):
     idx: int = Field(index=True)
     title: str = Field(default="")
     text_hash: str = Field(default="", index=True)  # full source text sha256
+    text: str = Field(default="")  # source text (synth reads this; audio is derived)
     render_key: str = Field(default="", index=True)  # voice+speed+model
     voice: str = Field(default="")
     speed: float = Field(default=1.0)

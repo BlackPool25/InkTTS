@@ -90,8 +90,12 @@ def add_book(body: AddBody,
     from . import jobs as J
     from .models import Novel, utcnow
     with Session(db.engine) as s:
-        novel = Novel(title=url, source_url=url,
-                      fingerprint=f"url:{url.lower()}",
+        fp = f"url:{url.lower()}"
+        dup = s.exec(select(Novel).where(Novel.fingerprint == fp)).first()
+        if dup is not None:
+            return {"novel_id": dup.id, "job_id": None,
+                    "status": "exists"}
+        novel = Novel(title=url, source_url=url, fingerprint=fp,
                       updated_at=utcnow())
         s.add(novel)
         s.commit()

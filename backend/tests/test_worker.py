@@ -88,7 +88,10 @@ def test_poison_job_does_not_stop_loop(tmp_path, monkeypatch, session):
     rows = {j.ref: j for j in session.exec(select(Job)).all()}
     assert rows["boom"].status == "failed"  # unknown kind failed, loop lived
     assert rows["novel:2:toc"].status == "done"
-    assert out["processed"] == 2
+    # crawl stored the chapter + enqueued its synth (stub renders in-test)
+    synths = [j for j in rows.values() if j.kind == "synth"]
+    assert synths and all(j.status == "done" for j in synths)
+    assert out["processed"] == 2 + len(synths)
 
 
 def test_synth_runs_render_pipeline(tmp_path, monkeypatch, session):

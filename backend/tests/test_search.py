@@ -137,3 +137,22 @@ def test_add_queues_toc_job_and_status_polls(tmp_path, monkeypatch):
     assert st.status_code == 200 and st.json()["ready"] is False
     assert client.get("/api/v1/books/add/status/999999",
                       headers=AUTH).status_code == 404
+
+
+def test_add_same_url_twice_returns_exists(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlmodel import SQLModel
+    from backend.app import db as _db
+    from backend.app.main import app
+    eng = create_engine(f"sqlite:///{tmp_path}/dedupe.db")
+    SQLModel.metadata.create_all(eng)
+    monkeypatch.setattr(_db, "engine", eng)
+    monkeypatch.setattr(_db, "DATA_DIR", str(tmp_path))
+    c = TestClient(app, raise_server_exceptions=False,
+                   headers={"Remote-User": "reader"})
+    r1 = c.post("/api/v1/books/add", json={"url": "https://example.com/novel-x"})
+    assert r1.status_code == 200, r1.text
+    r2 = c.post("/api/v1/books/add", json={"url": "https://example.com/novel-x"})
+    assert r2.json()["status"] == "exists"
+    assert r2.json()["job_id"] is None

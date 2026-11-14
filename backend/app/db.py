@@ -43,3 +43,35 @@ def create_all() -> None:
     from . import models  # noqa: F401  (register tables)
 
     SQLModel.metadata.create_all(engine)
+    _migrate_light()
+
+
+def _migrate_light() -> None:
+    """Column-level catch-up for single-file SQLite without running Alembic.
+
+    Boot uses create_all (fresh DBs get the full schema from metadata), but
+    create_all never ALTERs existing tables. For each known post-0001
+    column, add it if missing. Alembic revisions remain the source of truth
+    for the shape; this is the no-CLI applicator. No-op when current.
+    """
+    wanted = {"chapters": ["text"]}
+    try:
+        import sqlite3
+
+        db_path = engine.url.database
+        if not db_path or db_path == ":memory:":
+            return
+        con = sqlite3.connect(db_path, timeout=5)
+        try:
+            for table, cols in wanted.items():
+                have = {r[1] for r in con.execute(
+                    f"PRAGMA table_info({table})").fetchall()}
+                for col in cols:
+                    if col not in have:
+                        con.execute(
+                            f"ALTER TABLE {table} ADD COLUMN {col} TEXT DEFAULT ''")
+            con.commit()
+        finally:
+            con.close()
+    except Exception:
+        pass  # health + tests surface real breakage; never crash boot

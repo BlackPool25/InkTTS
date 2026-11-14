@@ -55,6 +55,23 @@ def playback_info(book_id: int, n: int):
         payload = resolve_playback(book_id, n, db.DATA_DIR, row)
     status = payload.pop("status")
     if status == 202:
+        # Cold: make sure a synth job exists so the 202 actually resolves.
+        # Text comes from the stored Chapter row (ingest writes it); without
+        # a row there is nothing to synth -> 404, not a forever-202.
+        if row is None or not (row.text or "").strip():
+            raise HTTPException(status_code=404,
+                                detail="chapter not crawled yet")
+        from . import db as _db2
+        from . import jobs as _jobs
+        import hashlib as _hl
+        import json as _json
+        th = _hl.sha256(row.text.encode()).hexdigest()
+        with Session(_db2.engine) as s2:
+            _jobs.enqueue(
+                s2, "synth", f"synth:{book_id}:{n}:{th[:8]}",
+                _json.dumps({"novel_id": book_id, "idx": n, "text": row.text,
+                             "voice": row.voice or "af_heart",
+                             "speed": row.speed or 1.0}))
         raise HTTPException(status_code=202, detail=payload)
     return payload
 

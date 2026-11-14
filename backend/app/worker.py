@@ -26,34 +26,77 @@ def _payload(job) -> dict:
         return {}
 
 
-def _ingest_files(session, job, source, state, files: list[str]) -> None:
+SKIP_BASENAMES = ("meta.json", "toc.json", "cover.jpg", "cover.jpeg",
+                   "cover.png", "cover.webp", "title.txt")
+
+
+def _ingest_files(session, job, source, state, files: list[str],
+                 novel_id: int | None = None) -> None:
     """Validate-then-commit over artifact FILES only (never stdout).
 
-    All-gated-out batch -> fail the job LOUD. Anything usable -> complete.
-    (Partial credit: chapters that pass the gate are never held hostage by
-    siblings that fail it.)
+    Passing chapters are STORED (Chapter rows with text) and get synth jobs
+    (inline text; coalesced by ref so retries never duplicate). All-gated-out
+    batch -> fail the job LOUD. No novel_id (unattributable) -> validate only.
     """
     from . import jobs as _jobs
     from . import scheduler as _sched
     from .gate import gate_text
+    from .models import Chapter
     from .scraper.client import iter_zip_chapters
+    from sqlmodel import select
+    import hashlib
 
-    texts: list[str] = []
+    texts: list[tuple[str, str]] = []
     for path in files:
         try:
             if path.lower().endswith((".zip", ".epub")):
-                texts.extend(t for _, t in iter_zip_chapters(path))
+                texts.extend((n, t) for n, t in iter_zip_chapters(path)
+                             if os.path.basename(n).lower() not in SKIP_BASENAMES)
             elif path.lower().endswith((".json", ".txt")):
+                if os.path.basename(path).lower() in SKIP_BASENAMES:
+                    continue
                 with open(path, encoding="utf-8", errors="replace") as f:
-                    texts.append(f.read())
+                    texts.append((path, f.read()))
         except OSError:
             continue
-    failures = [g for t in texts for g in [gate_text(t)] if not g.ok]
+    failures = [g for _, t in texts for g in [gate_text(t)] if not g.ok]
     if texts and len(failures) == len(texts):
         first = failures[0]
         _jobs.fail(session, job.id, first.error_class, first.reason)
         _sched.record_result(state, source, False, first.error_class)
         return
+    if novel_id is not None:
+        have_hashes = {c.text_hash for c in session.exec(
+            select(Chapter).where(Chapter.novel_id == novel_id)).all()}
+        rows = session.exec(select(Chapter).where(
+            Chapter.novel_id == novel_id)).all()
+        nxt = max([c.idx for c in rows], default=0) + 1
+        for _, text in texts:
+            if not text.strip():
+                continue
+            thash = hashlib.sha256(text.encode()).hexdigest()
+            if thash in have_hashes:
+                continue  # re-ingest of known text: skip, never duplicate
+            row = session.exec(select(Chapter).where(
+                Chapter.novel_id == novel_id, Chapter.idx == nxt)).first()
+            if row is None:
+                row = Chapter(novel_id=novel_id, idx=nxt)
+                session.add(row)
+            row.text = text
+            row.text_hash = thash
+            if row.audio_path or row.render_key:
+                row.audio_path = ""  # re-scraped text: full re-synth (lock #8)
+                row.render_key = ""
+            row.status = "ready"
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            have_hashes.add(thash)
+            _jobs.enqueue(
+                session, "synth", f"synth:{novel_id}:{nxt}:{thash[:8]}",
+                json.dumps({"novel_id": novel_id, "idx": nxt, "text": text,
+                            "voice": "af_heart", "speed": 1.0}))
+            nxt += 1
     _jobs.complete(session, job.id)
     _sched.record_result(state, source, True)
 
@@ -112,7 +155,8 @@ def _handle_crawl(session, job, *, state: dict, exec_prefix=None,
             return
         _ingest_files(session, job, source, state,
                       [os.path.join(mount, p) for p in grown
-                       if p.lower().endswith((".zip", ".epub", ".json", ".txt"))])
+                       if p.lower().endswith((".zip", ".epub", ".json", ".txt"))],
+                      novel_id=payload.get("novel_id"))
         _jobs.heartbeat(session, job.id)
         return
     except CrawlError as e:
@@ -120,7 +164,8 @@ def _handle_crawl(session, job, *, state: dict, exec_prefix=None,
         _sched.record_result(state, source, False, e.error_class or "transient")
         return
     # Ingest: artifact FILES only (never stdout), gate before any row.
-    _ingest_files(session, job, source, state, list(result.files))
+    _ingest_files(session, job, source, state, list(result.files),
+                   novel_id=payload.get("novel_id"))
 
 
 def _handle_synth(session, job, *, render_fn=None, data_dir=None) -> None:
@@ -140,7 +185,8 @@ def _handle_synth(session, job, *, render_fn=None, data_dir=None) -> None:
 
         def fn(nid, i, t, voice="af_heart", speed=1.0, data=""):  # noqa: ANN001,ANN202
             return _render(nid, i, t, voice, speed,
-                           data_dir or data or _db.DATA_DIR)
+                           data_dir or data or _db.DATA_DIR,
+                           db_session=session)
     try:
         fn(novel_id, idx, text, payload.get("voice", "af_heart"),
            payload.get("speed", 1.0), data_dir or "")

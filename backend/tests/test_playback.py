@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import pytest
 from fastapi import HTTPException
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session, SQLModel, select
 from sqlalchemy import create_engine
 
 from backend.app import db as _db
@@ -216,3 +216,33 @@ def test_router_paths_registered():
     assert any(p[0] == "/api/v1/books/{book_id}/progress" for p in paths)
     assert any("playback" in p[0] for p in paths)
     assert any("voice-cast" in p[0] for p in paths)
+
+
+def test_cold_play_enqueues_synth_once(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlmodel import SQLModel
+    from backend.app import db as _db
+    from backend.app.main import app
+    from backend.app.models import Chapter, Job, Novel
+    eng = create_engine(f"sqlite:///{tmp_path}/cold.db")
+    SQLModel.metadata.create_all(eng)
+    monkeypatch.setattr(_db, "engine", eng)
+    monkeypatch.setattr(_db, "DATA_DIR", str(tmp_path))
+    from sqlmodel import Session
+    with Session(eng) as s:
+        s.add(Novel(id=1, title="t"))
+        s.add(Chapter(novel_id=1, idx=3, text_hash="h",
+                      text="The lanterns swayed. " * 30, status="ready"))
+        s.commit()
+    c = TestClient(app, raise_server_exceptions=False,
+                   headers={"Remote-User": "reader"})
+    r1 = c.get("/api/v1/books/1/chapters/3/playback")
+    assert r1.status_code == 202, r1.text[:200]
+    r2 = c.get("/api/v1/books/1/chapters/3/playback")
+    assert r2.status_code == 202
+    with Session(eng) as s:
+        synths = [j for j in s.exec(select(Job)).all() if j.kind == "synth"]
+        assert len(synths) == 1  # coalesced, not duplicated
+    r3 = c.get("/api/v1/books/1/chapters/99/playback")
+    assert r3.status_code == 404  # never crawled: 404, not forever-202

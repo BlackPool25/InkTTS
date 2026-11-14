@@ -153,12 +153,21 @@ async def _synth_all(sentences: list[str], engine) -> list[bytes]:
 
 def render_chapter_text(novel_id: int, idx: int, text: str, voice: str,
                         speed: float, data_dir: str, engine=None,
-                        title: str = "") -> RenderedChapter:
+                        title: str = "", db_session=None) -> RenderedChapter:
     """Full-chapter synth. Pure wrt callers: gate first, pin key, publish."""
     from .gate import gate_text, quarantine_artifact, record_failure
     from .pron import load_rules, normalise
     from sqlmodel import Session
     from . import db as _db
+    from contextlib import contextmanager as _cm
+
+    @_cm
+    def _use_session(external):
+        if external is not None:
+            yield external
+        else:
+            with Session(_db.engine) as _s:
+                yield _s
 
     if engine is None:
         from .tts import KokoroEngine
@@ -168,7 +177,7 @@ def render_chapter_text(novel_id: int, idx: int, text: str, voice: str,
 
     gated = gate_text(text, title)
     if not gated.ok:
-        with Session(_db.engine) as s:
+        with _use_session(db_session) as s:
             record_failure(s, "synth", f"novel:{novel_id}:ch:{idx}",
                            gated.error_class, gated.reason)
         quarantine_artifact(f"novel{novel_id}_ch{idx}", text, gated.reason,
@@ -179,7 +188,7 @@ def render_chapter_text(novel_id: int, idx: int, text: str, voice: str,
     clean, notes = normalise(gated.clean_text, rules)
     sentences = split_sentences(clean)
     if not sentences:  # gate passed but nothing speakable after normalise
-        with Session(_db.engine) as s:
+        with _use_session(db_session) as s:
             record_failure(s, "synth", f"novel:{novel_id}:ch:{idx}",
                            "empty", "no sentences after normalise")
         raise ValueError("gate: no sentences after normalise")
@@ -189,7 +198,7 @@ def render_chapter_text(novel_id: int, idx: int, text: str, voice: str,
 
     from .models import Chapter
     from sqlmodel import select
-    with Session(_db.engine) as s:
+    with _use_session(db_session) as s:
         row = s.exec(select(Chapter).where(
             Chapter.novel_id == novel_id, Chapter.idx == idx)).first()
         if row is not None and row.text_hash == text_sha:
@@ -230,7 +239,7 @@ def render_chapter_text(novel_id: int, idx: int, text: str, voice: str,
         json.dump(manifest, f, ensure_ascii=False)
     os.rename(tmp_sc, sidecar_abs)
 
-    with Session(_db.engine) as s:
+    with _use_session(db_session) as s:
         row = s.exec(select(Chapter).where(
             Chapter.novel_id == novel_id, Chapter.idx == idx)).first()
         if row is None:
