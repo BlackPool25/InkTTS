@@ -6,12 +6,13 @@ so UI/playback/OPDS can hardcode them; bodies returning 501 are owned by
 their Task (2/3/6/7/8) and filled in there.
 """
 import os
+import hashlib
 import secrets
 import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlmodel import Session
@@ -184,40 +185,96 @@ def put_voices(authorization = Header(default=None)):
 
 @app.get("/api/v1/books/{book_id}/voice-map")
 def get_voice_map(book_id: int):
-    raise HTTPException(status_code=501, detail="owned by Task 7 (voice suite)")
+    from .voice import get_cast
+    with Session(db.engine) as s:
+        return {"novel_id": book_id, "cast": get_cast(s, book_id)}
 
 
 @app.put("/api/v1/books/{book_id}/voice-map")
-def put_voice_map(book_id: int, authorization = Header(default=None)):
+async def put_voice_map(book_id: int, request: Request,
+                        authorization = Header(default=None)):
     token_from_header(authorization)
-    raise HTTPException(status_code=501, detail="owned by Task 7 (voice suite)")
+    from .voice import put_cast
+    body = await request.json()
+    mapping = body.get("cast", body) if isinstance(body, dict) else None
+    if not isinstance(mapping, dict):
+        raise HTTPException(status_code=422, detail="cast must be an object")
+    try:
+        with Session(db.engine) as s:
+            cast = put_cast(s, book_id, mapping)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return {"novel_id": book_id, "cast": cast}
 
 
 @app.get("/api/v1/pron-dict")
 def get_pron():
-    raise HTTPException(status_code=501, detail="owned by Task 2/7 (pron)")
+    from sqlmodel import select
+    from .models import PronEntry
+    with Session(db.engine) as s:
+        rows = s.exec(select(PronEntry)).all()
+        return {"rules": [{"pattern": r.pattern,
+                           "replacement": r.replacement} for r in rows]}
 
 
 @app.put("/api/v1/pron-dict")
-def put_pron(authorization = Header(default=None)):
+async def put_pron(request: Request, authorization = Header(default=None)):
     token_from_header(authorization)
-    raise HTTPException(status_code=501, detail="owned by Task 2/7 (pron)")
-
-
-@app.get("/api/v1/opds/catalog.xml")
-def opds_catalog():
-    raise HTTPException(status_code=501, detail="owned by Task 8 (OPDS)")
-
-
-@app.get("/api/v1/opds/search")
-def opds_search(q: str = ""):
-    raise HTTPException(status_code=501, detail="owned by Task 8 (OPDS)")
+    from sqlmodel import select
+    from .models import PronEntry
+    from .voice import validate_pron
+    body = await request.json()
+    if isinstance(body, dict):
+        rules = body.get("rules", [body])
+    elif isinstance(body, list):
+        rules = body
+    else:
+        raise HTTPException(status_code=422,
+                            detail="rules must be an object or list")
+    try:
+        clean = []
+        for r in rules:
+            validate_pron(r.get("pattern", ""), r.get("replacement", ""))
+            clean.append((r["pattern"], r.get("replacement", "")))
+    except (AttributeError, ValueError) as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    with Session(db.engine) as s:
+        for pattern, replacement in clean:
+            row = s.exec(select(PronEntry).where(
+                PronEntry.pattern == pattern)).first()
+            if row is None:
+                s.add(PronEntry(pattern=pattern, replacement=replacement))
+            else:
+                row.replacement = replacement
+                s.add(row)
+        s.commit()
+        rows = s.exec(select(PronEntry)).all()
+        return {"rules": [{"pattern": r.pattern,
+                           "replacement": r.replacement} for r in rows]}
 
 
 @app.post("/api/v1/admin/backup")
 def admin_backup(authorization = Header(default=None)):
     token_from_header(authorization)
-    raise HTTPException(status_code=501, detail="owned by Task 6 (backup)")
+    from .backup import BackupError, export_backup
+    try:
+        db_path = db.engine.url.database or "/data/db/inkcast.db"
+    except Exception:  # noqa: BLE001
+        db_path = "/data/db/inkcast.db"
+    backups = os.path.join(db.DATA_DIR, "backups")
+    os.makedirs(backups, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = os.path.join(backups, f"inkcast-{stamp}.bak")
+    try:
+        export_backup(db_path, db.DATA_DIR, out,
+                      passphrase=None, allow_plaintext=True)
+    except BackupError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    h = hashlib.sha256()
+    with open(out, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return {"path": out, "sha256": h.hexdigest()}
 
 
 @app.get("/api/v1/jobs")
