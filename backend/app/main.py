@@ -39,6 +39,8 @@ try:  # Task 7/8 additive routers (frozen stubs below untouched).
     app.include_router(playback_router)
     from .routes_catalog import router as catalog_router
     app.include_router(catalog_router)
+    from .routes_search import router as search_router
+    app.include_router(search_router)
 except Exception:  # noqa: BLE001 -- health + frozen paths stay up regardless
     pass
 

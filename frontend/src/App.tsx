@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchChapterJson, sentenceIndexAt, type ChapterJson } from "./lib/manifest";
 import { onEndedOnce, seekWhenReady } from "./lib/audio";
 import { Player, type PlayerState } from "./lib/player";
 import { tryBecomeLeader, watchLifetime } from "./lib/tabs";
+import AddNovel from "./views/AddNovel";
 
 const API = "/api/v1";
 
@@ -22,6 +23,7 @@ export default function App() {
   const [bar, setBar] = useState<PlayerState>({ kind: "idle" });
   const [leader, setLeader] = useState(true);
   const [speed, setSpeed] = useState(1);
+  const [view, setView] = useState<"library" | "search">("library");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playerRef = useRef<Player | null>(null);
   const posRef = useRef({ bookId: "", chapter: 1, sent_id: -1 });
@@ -46,11 +48,15 @@ export default function App() {
     el.addEventListener("timeupdate", () => player.onTimeUpdate());
   };
 
-  useEffect(() => {
+  const refreshBooks = useCallback(() => {
     fetch(`${API}/books`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((b: Book[]) => setBooks(b))
       .catch(() => setBooks([]));
+  }, []);
+
+  useEffect(() => {
+    refreshBooks();
     setLeader(tryBecomeLeader(tabId.current));
     const stop = watchLifetime(
       tabId.current,
@@ -107,6 +113,14 @@ export default function App() {
       <main>
         <h1>InkCast</h1>
         <audio ref={attachAudio} controls style={{ display: "none" }} />
+        <nav>
+          <button onClick={() => setView("library")}>Library</button>
+          <button onClick={() => setView("search")}>+ Add novel</button>
+        </nav>
+        {view === "search" ? (
+          <AddNovel onAdded={() => { setView("library"); refreshBooks(); }} />
+        ) : (
+        <>
         <ul>
           {books.map((b) => (
             <li key={b.id}>
@@ -118,6 +132,8 @@ export default function App() {
           ))}
         </ul>
         {books.length === 0 && <p>No books yet.</p>}
+        </>
+        )}
       </main>
     );
   }
