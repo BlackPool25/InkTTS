@@ -12,7 +12,7 @@
 10. Progress: sentence granularity; server-time LWW + 5s flap; field-level merge in backups.
 11. Sync: portable backup file (ZIP: library.db + sidecars + covers, no audio, age-encrypted by default). Merge verified in staging. No accounts, no sync server.
 12. Novel identity: title+author fingerprint + URL aliases, join UI.
-13. Client: web UI only (Flutter deleted) — fork OpenReader (MIT). Wire library → /api/v1, narration → Opus+manifest. Fallback: Chapter → minimal reader.
+13. Client: web UI only (Flutter deleted) — FULL OpenReader v5.4.1 fork (MIT) as second service (own PWA kept as fallback/lean client). Phase 1: stock-slim behind our wall, anonymous sessions, kokoro-tts sidecar. Phase 2: our-novels bridge (chapter-JSON -> their import API). Rationale: reader is a full platform (Next+NATS-less slim still = own auth/DB/worker); surgically extracting its UI costs more than running it.
 14. Playback: tab leader election; sleep timer cancels prefetch; pagehide snapshots; UTC everywhere.
 15. Transport: HTTP Range for bytes + manifest; WS control-plane only (or HTTP poll — builder's call).
 16. OPDS 1.2 + M4B export in v1; OPDS via per-device token exemption (readers can't log in).
