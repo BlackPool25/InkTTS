@@ -24,7 +24,9 @@ authentication_backend:
 access_control:
   default_policy: deny
   rules:
-    - domain: '*.192-168-29-101.nip.io'
+    - domain:
+        - '192.168.29.101'
+        - '*.192-168-29-101.nip.io'
       policy: one_factor
 
 # 30-day sessions over plain-http LAN. Authelia 4.39 has no per-cookie
@@ -40,6 +42,10 @@ session:
   inactivity: 24h
   remember_me: 720h  # 30 days
   cookies:
+    - domain: '192.168.29.101'
+      authelia_url: "https://192.168.29.101:8443"
+      default_redirection_url: 'https://192.168.29.101:8085/'
+      same_site: lax
     - domain: '192-168-29-101.nip.io'
       authelia_url: "https://auth.192-168-29-101.nip.io:8085"
       default_redirection_url: 'https://inkcast.192-168-29-101.nip.io:8085/'

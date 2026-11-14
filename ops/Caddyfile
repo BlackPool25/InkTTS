@@ -1,3 +1,11 @@
+# Global options must come first.
+{
+	auto_https ignore_loaded_certs
+	# Browsers/curl omit SNI for IP literals (RFC 6066) — without this,
+	# IP handshakes die with a TLS internal-error alert (no cert selectable).
+	default_sni 192.168.29.101
+}
+
 # Plain-HTTP twin for the compose `remote` profile (in-container Tailscale
 # terminates trusted TLS for the MagicDNS name and forwards here):
 #   docker compose --profile remote up -d
@@ -25,27 +33,33 @@
 # One-time per device: install ops/lan-ca.crt (extracted from Caddy) so the
 # local CA is trusted. If DHCP changes the host IP, replace all three
 # occurrences of 192-168-29-101 below + the Authelia cookie URLs.
-{
-	auto_https ignore_loaded_certs
-}
+# (Global options block moved to top of file — Caddy requires it first.)
 
-# App: library + API + reader (behind the wall, OPDS token-exempt)
-https://inkcast.192-168-29-101.nip.io:8085 {
-	tls internal
+# App: plain LAN IP first (validator accepts IPs; browsers store host-only),
+# nip.io names as fallback (same LAN IP, dotted for picky cookie jars).
+https://192.168.29.101:8085, https://inkcast.192-168-29-101.nip.io:8085 {
+	tls /etc/caddy/certs/lan.crt /etc/caddy/certs/lan.key
+	# API + WS: behind the wall (OPDS token-exempt for e-readers)
 	handle /api/v1/opds* {
 		reverse_proxy backend:8000
 	}
-	handle {
+	handle /api/* {
 		forward_auth authelia:9091 {
 			uri /api/authz/forward-auth
 			copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
 		}
 		reverse_proxy backend:8000
 	}
+	# Reader UI: static PWA, no wall check here (API calls carry the session)
+	handle {
+		root * /srv/pwa
+		try_files {http.request.uri.path} /index.html
+		file_server
+	}
 }
 
-# Authelia portal (login page) served directly
-https://auth.192-168-29-101.nip.io:8085 {
-	tls internal
+# Portal: same pair, direct (never behind the wall itself).
+https://192.168.29.101:8443, https://auth.192-168-29-101.nip.io:8085 {
+	tls /etc/caddy/certs/lan.crt /etc/caddy/certs/lan.key
 	reverse_proxy authelia:9091
 }
