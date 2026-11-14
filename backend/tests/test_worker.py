@@ -135,3 +135,56 @@ def test_heartbeat_fresh_and_stale_lease_swept(tmp_path, monkeypatch, session):
     assert os.path.isfile(hb)
     assert time.time() - os.path.getmtime(hb) < 60 and os.path.getmtime(hb) >= before - 1
     assert session.get(Job, stale.id).status == "done"  # swept, reclaimed, run
+
+
+def test_single_flight_skips_live_url(tmp_path, monkeypatch, session):
+    """A live stray for the same URL -> lease renewed, no second spawn."""
+    from backend.app import worker as W
+    from backend.app.scraper import exec_docker as _ex
+    import backend.app.scraper.client as _cl
+    job = _crawl_job(session)
+    job.status = "running"  # as claim_next would leave it
+    session.add(job)
+    session.commit()
+    monkeypatch.setattr(_ex, "stray_pids", lambda *a, **k: ["4242"])
+    def _boom(*a, **k):
+        raise AssertionError("must not spawn while a stray lives")
+    monkeypatch.setattr(_cl, "run_crawl", _boom)
+    sc = tmp_path / "sidecar"
+    sc.mkdir()
+    W._handle_crawl(session, job, state={}, sidecar_mount=str(sc),
+                    dest_base=str(tmp_path / "jobs"))
+    row = session.get(Job, job.id)
+    assert row.status == "running" and row.attempts == 0  # untouched, lease renewed
+
+
+def test_timeout_with_progress_ingests_and_continues(tmp_path, monkeypatch, session):
+    """Timeout + new bytes -> ingest + renewed lease (not transient-fail)."""
+    from backend.app import worker as W
+    job = _crawl_job(session)
+    sc = tmp_path / "sidecar"
+    sc.mkdir()
+    text = "<p>" + "The lanterns swayed in the evening wind. " * 30 + "</p>"
+    out = W.run_once(
+        session, state={}, sidecar_mount=str(sc),
+        dest_base=str(tmp_path / "jobs"),
+        heartbeat_path=str(tmp_path / "hb" / "scheduler.heartbeat"),
+        exec_prefix=["sh", "-c",
+                     f"sleep 0.05; printf %s '{text}' > '{sc}/ch9.json'; sleep 5",
+                     "--"],
+        crawl_timeout_s=0.6, sources=[])
+    row = session.get(Job, job.id)
+    # grown file ingested (gate passes) instead of failed-transient
+    assert row.status == "done", row.error
+
+
+def test_timeout_without_progress_fails_transient(tmp_path, monkeypatch, session):
+    job = _crawl_job(session)
+    from backend.app import worker as W
+    sc = tmp_path / "sidecar2"
+    sc.mkdir()
+    W._handle_crawl(session, job, state={}, sidecar_mount=str(sc),
+                    dest_base=str(tmp_path / "jobs2"),
+                    exec_prefix=["sh", "-c", "sleep 5", "--"], timeout_s=0.2)
+    row = session.get(Job, job.id)
+    assert row.status == "failed" and row.error_class == "transient"

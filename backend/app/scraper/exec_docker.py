@@ -93,6 +93,68 @@ def exec_sidecar(argv: list[str], timeout_s: float,
     return rc, _decode(first), _decode(second)
 
 
+def stray_pids(needle: str, container: str = LNCRAWL_CONTAINER,
+               timeout_s: float = 15) -> list[str]:
+    """PIDs in the sidecar whose command line contains ``needle`` (best effort).
+
+    Used for single-flight: never stack a second crawl for a URL that already
+    has a live one (abandoned execs can't be SIGKILLed remotely). Returns []
+    on any failure — callers treat unknown as "no strays" and proceed.
+    """
+    try:
+        import docker
+    except ImportError:
+        return []
+    client = None
+    try:
+        client = docker.from_env(timeout=int(timeout_s) + 10)
+        ctr = client.containers.get(container)
+        box: dict = {}
+
+        def _run() -> None:
+            try:
+                box["res"] = ctr.exec_run(["pgrep", "-f", needle], demux=True)
+            except Exception as e:  # noqa: BLE001 -- stored below
+                box["err"] = e
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        t.join(timeout_s)
+        if t.is_alive() or "err" in box:
+            return []
+        rc, out = box.get("res", (1, (b"", b"")))
+        if int(rc or 1) != 0:
+            return []
+        first = (list(out) + [b""])[0] if isinstance(out, (list, tuple)) else out
+        return [p for p in _decode(first).split() if p.strip()]
+    except Exception:  # noqa: BLE001 -- best effort only
+        return []
+    finally:
+        try:
+            client.close()
+        except Exception:  # noqa: BLE001 -- best effort
+            pass
+
+
+def kill_strays(needle: str, container: str = LNCRAWL_CONTAINER,
+                timeout_s: float = 20) -> int:
+    """`pkill -f needle` in the sidecar. Last resort for pileups.
+    Best effort, never raises; returns 0."""
+    try:
+        import docker
+        client = docker.from_env(timeout=int(timeout_s) + 10)
+        ctr = client.containers.get(container)
+        ctr.exec_run(["pkill", "-f", needle], demux=True)
+        return 0
+    except Exception:  # noqa: BLE001 -- best effort only
+        return 0
+    finally:
+        try:
+            client.close()
+        except Exception:  # noqa: BLE001 -- best effort
+            pass
+
+
 def local_exec(prefix_argv: list[str],
                timeout_s: float) -> tuple[int, str, str]:
     """Hermetic subprocess path for the ``exec_prefix`` test hook (no daemon

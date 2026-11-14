@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import random
 import time
 
 EXEC_PREFIX: list[str] | None = None  # test hook: local subprocess, no sidecar
-CRAWL_TIMEOUT_S = 300.0  # <= job lease; expiry raises CrawlTimeout (transient)
+CRAWL_TIMEOUT_S = 600.0  # full-novel crawls exceed 300s; lease is 1800s
 
 
 def _payload(job) -> dict:
@@ -25,13 +26,47 @@ def _payload(job) -> dict:
         return {}
 
 
+def _ingest_files(session, job, source, state, files: list[str]) -> None:
+    """Validate-then-commit over artifact FILES only (never stdout).
+
+    All-gated-out batch -> fail the job LOUD. Anything usable -> complete.
+    (Partial credit: chapters that pass the gate are never held hostage by
+    siblings that fail it.)
+    """
+    from . import jobs as _jobs
+    from . import scheduler as _sched
+    from .gate import gate_text
+    from .scraper.client import iter_zip_chapters
+
+    texts: list[str] = []
+    for path in files:
+        try:
+            if path.lower().endswith((".zip", ".epub")):
+                texts.extend(t for _, t in iter_zip_chapters(path))
+            elif path.lower().endswith((".json", ".txt")):
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    texts.append(f.read())
+        except OSError:
+            continue
+    failures = [g for t in texts for g in [gate_text(t)] if not g.ok]
+    if texts and len(failures) == len(texts):
+        first = failures[0]
+        _jobs.fail(session, job.id, first.error_class, first.reason)
+        _sched.record_result(state, source, False, first.error_class)
+        return
+    _jobs.complete(session, job.id)
+    _sched.record_result(state, source, True)
+
+
 def _handle_crawl(session, job, *, state: dict, exec_prefix=None,
                   sidecar_mount=None, dest_base=None,
                   timeout_s: float = CRAWL_TIMEOUT_S) -> None:
     from . import jobs as _jobs
     from . import scheduler as _sched
-    from .scraper.client import (CrawlError, build_crawl_argv,
-                                 iter_zip_chapters, run_crawl)
+    from .scraper.client import (CrawlError, CrawlTimeout, build_crawl_argv,
+                                 run_crawl, snapshot_dir)
+    from .scraper.exec_docker import stray_pids
+    from .scraper.client import SIDECAR_MOUNT
 
     payload = _payload(job)
     url = payload.get("url") or payload.get("source") or ""
@@ -42,6 +77,13 @@ def _handle_crawl(session, job, *, state: dict, exec_prefix=None,
         _jobs.fail(session, job.id, "transient",
                    f"crawl {job.ref}: no url/source in payload")
         return
+    mount = sidecar_mount or SIDECAR_MOUNT
+    # Single-flight: an abandoned exec can't be SIGKILLed, so never stack a
+    # second crawl for a URL that already has a live one. Renew the lease
+    # (job stays running) and let the stray finish into --resume range.
+    if exec_prefix is None and stray_pids(url):
+        _jobs.heartbeat(session, job.id)
+        return
     argv = build_crawl_argv(url, resume=payload.get("resume", True))
     try:
         kw = {}
@@ -49,34 +91,36 @@ def _handle_crawl(session, job, *, state: dict, exec_prefix=None,
             kw["sidecar_mount"] = sidecar_mount
         if dest_base is not None:
             kw["dest_base"] = dest_base
+        before = snapshot_dir(mount)
         result = run_crawl(argv, job.id, timeout_s,
                            exec_prefix=exec_prefix if exec_prefix is not None
                            else EXEC_PREFIX, **kw)
+        files = list(result.files)
+    except CrawlTimeout:
+        # Progress, not wall-clock, decides: full-novel crawls legitimately
+        # exceed any fixed timeout. New bytes since pass start -> renew the
+        # lease, ingest what landed, stay running for the next pass
+        # (--resume skips what's done). Silence -> fail transient as before.
+        from .scraper.client import CrawlError as _CE
+        after = snapshot_dir(mount)
+        grown = [p for p, meta in after.items()
+                 if p not in before or meta != before[p]]
+        if not grown:
+            _jobs.fail(session, job.id, "transient",
+                       f"crawl {job.ref}: no progress in {timeout_s:.0f}s")
+            _sched.record_result(state, source, False, "transient")
+            return
+        _ingest_files(session, job, source, state,
+                      [os.path.join(mount, p) for p in grown
+                       if p.lower().endswith((".zip", ".epub", ".json", ".txt"))])
+        _jobs.heartbeat(session, job.id)
+        return
     except CrawlError as e:
         _jobs.fail(session, job.id, e.error_class or "transient", str(e))
         _sched.record_result(state, source, False, e.error_class or "transient")
         return
     # Ingest: artifact FILES only (never stdout), gate before any row.
-    texts: list[str] = []
-    for path in result.files:
-        try:
-            if path.lower().endswith((".zip", ".epub")):
-                texts.extend(t for _, t in iter_zip_chapters(path))
-            elif path.lower().endswith((".json", ".txt")):
-                with open(path, encoding="utf-8", errors="replace") as f:
-                    texts.append(f.read())
-        except OSError:
-            continue
-    from .gate import gate_text
-
-    failures = [g for t in texts for g in [gate_text(t)] if not g.ok]
-    if texts and len(failures) == len(texts):
-        first = failures[0]
-        _jobs.fail(session, job.id, first.error_class, first.reason)
-        _sched.record_result(state, source, False, first.error_class)
-        return
-    _jobs.complete(session, job.id)
-    _sched.record_result(state, source, True)
+    _ingest_files(session, job, source, state, list(result.files))
 
 
 def _handle_synth(session, job, *, render_fn=None, data_dir=None) -> None:
