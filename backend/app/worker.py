@@ -162,16 +162,24 @@ def run_once(session, *, state: dict | None = None, sources=(),
 
 
 async def run_forever(interval_s: float = 60, **kwargs) -> None:
-    """Engine loop: one sequential pass per interval, never crashes."""
+    """Engine loop: one sequential pass per interval, never crashes.
+
+    Passes run in a worker thread (to_thread): run_once does blocking
+    docker-exec/subprocess/synth I/O that would otherwise freeze the
+    uvicorn event loop for minutes (health + API dead during a pass).
+    """
     from . import db as _db
     from . import jobs as _jobs
     from sqlmodel import Session
 
+    def _pass() -> None:
+        with Session(_db.engine) as s:
+            run_once(s, **kwargs)
+
     _jobs.boot_stagger()  # restart storm guard (no-op for a single worker)
     while True:
         try:
-            with Session(_db.engine) as s:
-                run_once(s, **kwargs)
+            await asyncio.to_thread(_pass)
         except Exception:  # noqa: BLE001 -- per-job rows already failed LOUD
             pass
         await asyncio.sleep(interval_s)
