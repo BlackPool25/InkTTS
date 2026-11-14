@@ -9,3 +9,5 @@ data/audio/
 data/epubs/
 data/backups/
 .omo/
+frontend/node_modules/
+frontend/dist/
