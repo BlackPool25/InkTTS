@@ -1,6 +1,6 @@
-"""Novel search via the lncrawl sidecar (docker exec, never PyPI).
+"""Novel search via the lncrawl sidecar (docker SDK, never PyPI/CLI).
 
-search_novels() shells out with the same venv prefix as client.run_crawl
+search_novels() execs with the same venv cmd as client.run_crawl
 (PID 1 in the image is `sleep infinity`; system python lacks deps) and
 parses the human-readable `lncrawl search` stdout into normalized hits:
 
@@ -15,20 +15,18 @@ Observed 2026-11-14 (live probe, lncrawl 4.x), groups of::
 Parsing is defensive (regex, never raises on unknown lines): title lines
 open a group, arrow lines open a pending hit, the first non-empty line
 after a hit that is not a new group/arrow is its status. Errors reuse
-client.classify_error; exec timeout SIGKILLs the child and raises
-CrawlTimeout (transient), mirroring run_crawl.
+client.classify_error; exec timeout raises CrawlTimeout (transient),
+mirroring run_crawl.
 """
 
 from __future__ import annotations
 
 import re
-import signal
-import subprocess
 import time
 from urllib.parse import urlparse
 
-from .client import (LNCRAWL_CONTAINER, CrawlError, CrawlTimeout,
-                     classify_error)
+from .client import CrawlError, classify_error
+from .exec_docker import exec_sidecar, local_exec
 
 _TITLE_RE = re.compile(r"^\s*📖?\s*(.+?)\s*\(\d+\s*results?\)\s*$")
 _ARROW_RE = re.compile(r"^\s*(?:➡|->|=>)\s*(\S+)\s*$")
@@ -87,24 +85,11 @@ def search_novels(query: str, timeout_s: float = 60,
     q = (query or "").strip()
     if not q:
         return []
-    prefix = list(exec_prefix) if exec_prefix is not None else [
-        "docker", "exec", LNCRAWL_CONTAINER,
-        "/app/.venv/bin/python", "-m", "lncrawl"]
-    proc = subprocess.Popen(prefix + ["search", q],
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True)
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout_s)
-        rc = proc.returncode
-    except subprocess.TimeoutExpired:
-        proc.kill()  # SIGKILL the docker-exec child (mirror run_crawl)
-        try:
-            stdout, stderr = proc.communicate(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.send_signal(signal.SIGKILL)
-            stdout, stderr = proc.communicate()
-        raise CrawlTimeout(
-            f"search timed out after {timeout_s}s (SIGKILLed)") from None
+    if exec_prefix is not None:
+        rc, stdout, stderr = local_exec(list(exec_prefix) + ["search", q],
+                                        timeout_s)
+    else:
+        rc, stdout, stderr = exec_sidecar(["search", q], timeout_s)
     if rc != 0:
         tail = ((stdout or "") + (stderr or ""))[-2000:]
         raise CrawlError(f"lncrawl search exit {rc}: {tail[-500:]}",

@@ -37,6 +37,7 @@ from .client import (
     snapshot_dir,
     sweep_stale_tmp,
 )
+from .exec_docker import exec_sidecar, local_exec
 
 __all__ = [
     "BACKEND_JOB_DIR",
@@ -49,8 +50,10 @@ __all__ = [
     "build_crawl_argv",
     "classify_error",
     "collect_artifacts",
+    "exec_sidecar",
     "iter_zip_chapters",
     "job_dir",
+    "local_exec",
     "new_files",
     "run_crawl",
     "snapshot_dir",

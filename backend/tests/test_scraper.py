@@ -18,7 +18,8 @@ from backend.app import scheduler as S
 from backend.app.models import Chapter, Job
 from backend.app.refetch import (refetch_chapter, repair_diff, repair_novel,
                                  unquarantine)
-from backend.app.scraper.client import (CrawlTimeout, classify_error, job_dir,
+from backend.app.scraper.client import (CrawlError, CrawlTimeout, classify_error,
+                                        job_dir,
                                         parse_retry_after, run_crawl,
                                         sweep_stale_tmp)
 from backend.app.scheduler import (apply_result, backoff_s, due_sources,
@@ -109,6 +110,25 @@ def test_parse_zips_only_never_stdout(tmp_path):
         os.path.join(dest, "ch1.epub")]  # stdout/logs never collected
     d = job_dir(5, base=str(tmp_path / "j"))
     assert os.path.basename(d).startswith("crawl-5-")
+
+
+def test_exec_sidecar_socket_missing_is_loud_crawl_error(monkeypatch):
+    # Missing /var/run/docker.sock must surface as CrawlError (jobs row/502),
+    # never a bare FileNotFoundError (which 500-blanks the route).
+    import sys
+    import types as _types
+
+    from backend.app.scraper import exec_docker as E
+
+    stub = _types.ModuleType("docker")
+
+    def _no_socket(**kw):
+        raise FileNotFoundError(2, "No such file or directory")
+
+    stub.from_env = _no_socket
+    monkeypatch.setitem(sys.modules, "docker", stub)
+    with pytest.raises(CrawlError, match="docker socket unreachable"):
+        E.exec_sidecar(["search", "x"], timeout_s=5)
 
 
 def test_challenge_output_is_blocked_not_transient():

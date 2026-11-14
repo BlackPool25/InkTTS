@@ -82,6 +82,22 @@ def _client(tmp_path, monkeypatch):
     return TestClient(app, raise_server_exceptions=False), eng
 
 
+def test_search_socket_missing_is_loud_crawl_error(monkeypatch):
+    # Default (SDK) path with no daemon: CrawlError, not FileNotFoundError.
+    import sys
+    import types as _types
+
+    import backend.app.scraper.search as Smod
+    from backend.app.scraper.client import CrawlError as _CE
+
+    stub = _types.ModuleType("docker")
+    stub.from_env = lambda **kw: (_ for _ in ()).throw(
+        FileNotFoundError(2, "No such file or directory"))
+    monkeypatch.setitem(sys.modules, "docker", stub)
+    with pytest.raises(_CE, match="docker socket unreachable"):
+        Smod.search_novels("shadow slave", timeout_s=5)
+
+
 def test_search_route_auth_and_shape(tmp_path, monkeypatch):
     import backend.app.scraper.search as S
     client, _eng = _client(tmp_path, monkeypatch)

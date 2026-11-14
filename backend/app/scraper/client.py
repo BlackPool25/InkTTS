@@ -5,8 +5,9 @@ Rules (from Task 3 brief):
   backend dir (no zip-name races between jobs).
 - Parse artifact FILES only (zip/epub/json/txt) — never scrape stdout, which
   is rich-console noise in v4, not content.
-- Exec timeout -> SIGKILL the docker-exec child, raise CrawlTimeout
-  (transient). The jobs-table lease (MISFIRE_S) re-queues via sweep_stale.
+- Exec goes through the docker SDK (exec_docker.exec_sidecar): the backend
+  image ships no `docker` CLI. Timeout raises CrawlTimeout (transient); the
+  jobs-table lease (MISFIRE_S) re-queues via sweep_stale.
 - Container name from LNCRAWL_CONTAINER env (compose sets inkcast-lncrawl).
 """
 
@@ -14,8 +15,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import signal
-import subprocess
 import time
 import uuid
 import zipfile
@@ -24,6 +23,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 from ..gate import CHALLENGE_SIGS
+from .exec_docker import exec_sidecar, local_exec
 
 LNCRAWL_CONTAINER = os.environ.get("LNCRAWL_CONTAINER", "inkcast-lncrawl")
 # Sidecar-side data root (ENV LNCRAWL_DATA_PATH in image; see pkg docstring).
@@ -80,8 +80,8 @@ def build_crawl_argv(url: str, first: int | None = None,
                      resume: bool = False, refresh: bool = False,
                      formats: tuple[str, ...] = ("json",),
                      rate_limit: float | None = None) -> list[str]:
-    """Non-interactive v4 argv: ``crawl URL --noin ...`` (run_crawl prefixes
-    ``docker exec <ctr> /app/.venv/bin/python -m lncrawl``: the image's system
+    """Non-interactive v4 argv: ``crawl URL --noin ...`` (exec_docker runs
+    ``/app/.venv/bin/python -m lncrawl`` in the sidecar: the image's system
     python lacks deps, and PID 1 is `sleep infinity`). Scheduler ticks use
     --resume (= conditional fetch: only chapters not already downloaded
     transfer)."""
@@ -213,34 +213,19 @@ def run_crawl(argv: list[str], job_id: int, timeout_s: float,
               sidecar_mount: str = SIDECAR_MOUNT,
               dest_base: str = BACKEND_JOB_DIR,
               exec_prefix: list[str] | None = None) -> CrawlResult:
-    """docker exec the sidecar, snapshot new artifacts into a per-job dir.
+    """Exec the sidecar (docker SDK; ``exec_prefix`` overrides with a local
+    subprocess for hermetic tests), snapshot new artifacts into a per-job dir.
 
-    timeout_s should be <= the job's remaining lease: on expiry the child is
-    SIGKILLed and CrawlTimeout raised, so no orphan crawl can later commit
-    rows for a lease that already moved on.
+    timeout_s should be <= the job's remaining lease: on expiry CrawlTimeout
+    is raised (transient), so no orphan crawl can later commit rows for a
+    lease that already moved on.
     """
-    # 4.14.0 image: system python lacks deps (no typer); the venv python owns them.
-    # `sleep infinity` is PID 1, so exec must name the interpreter explicitly.
-    prefix = list(exec_prefix) if exec_prefix is not None else [
-        "docker", "exec", LNCRAWL_CONTAINER,
-        "/app/.venv/bin/python", "-m", "lncrawl"]
     before = snapshot_dir(sidecar_mount)
     dest = job_dir(job_id, dest_base)
-    proc = subprocess.Popen(prefix + argv, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True)
-    try:
-        _, stderr = proc.communicate(timeout=timeout_s)
-        rc = proc.returncode
-    except subprocess.TimeoutExpired:
-        proc.kill()  # SIGKILL the docker-exec child (and the crawl with it)
-        try:
-            _, stderr = proc.communicate(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.send_signal(signal.SIGKILL)
-            _, stderr = proc.communicate()
-        rc = -9
-        tail = (stderr or "")[-2000:]
-        raise CrawlTimeout(f"exec timed out after {timeout_s}s (SIGKILLed)")
+    if exec_prefix is not None:
+        rc, _, stderr = local_exec(list(exec_prefix) + list(argv), timeout_s)
+    else:
+        rc, _, stderr = exec_sidecar(argv, timeout_s)
     tail = (stderr or "")[-2000:]
     if rc != 0:
         raise CrawlError(f"lncrawl exit {rc}: {tail[-500:]}",

@@ -24,7 +24,14 @@ from sqlmodel import Session, select
 router = APIRouter(prefix="/api/v1", tags=["search"])
 
 
-def _require_token(authorization: str | None) -> None:
+def _require_caller(authorization: str | None = None,
+                    remote_user: str | None = None) -> None:
+    """Browser sessions come through Caddy's wall (Remote-User set by
+    forward_auth — backend is not port-published so clients can't spoof it);
+    scripts/curl use API_TOKEN. Either is sufficient here. Admin/backup
+    stay strict-token (see main.py)."""
+    if remote_user:
+        return
     expected = os.environ.get("API_TOKEN", "")
     if not expected:
         raise HTTPException(status_code=500,
@@ -36,7 +43,7 @@ def _require_token(authorization: str | None) -> None:
             tok = parts[1]
     if not tok or not secrets.compare_digest(tok, expected):
         raise HTTPException(status_code=401,
-                            detail="invalid or missing API token")
+                            detail="login required (web) or bad API token")
 
 
 class AddBody(BaseModel):
@@ -44,8 +51,9 @@ class AddBody(BaseModel):
 
 
 @router.get("/search")
-def search(q: str = "", authorization: str | None = Header(default=None)):
-    _require_token(authorization)
+def search(q: str = "", authorization: str | None = Header(default=None),
+               remote_user: str | None = Header(default=None, alias="Remote-User")):
+    _require_caller(authorization, remote_user)
     if not q.strip():
         raise HTTPException(status_code=422, detail="q is required")
     from .scraper.client import CrawlError, CrawlTimeout
@@ -67,8 +75,9 @@ def search(q: str = "", authorization: str | None = Header(default=None)):
 
 @router.post("/books/add")
 def add_book(body: AddBody,
-             authorization: str | None = Header(default=None)):
-    _require_token(authorization)
+             authorization: str | None = Header(default=None),
+             remote_user: str | None = Header(default=None, alias="Remote-User")):
+    _require_caller(authorization, remote_user)
     url = (body.url or "").strip()
     try:
         host = urlparse(url).hostname or ""
@@ -97,8 +106,9 @@ def add_book(body: AddBody,
 
 @router.get("/books/add/status/{job_id}")
 def add_status(job_id: int,
-               authorization: str | None = Header(default=None)):
-    _require_token(authorization)
+               authorization: str | None = Header(default=None),
+               remote_user: str | None = Header(default=None, alias="Remote-User")):
+    _require_caller(authorization, remote_user)
     from . import db
     from .models import Job
     with Session(db.engine) as s:
