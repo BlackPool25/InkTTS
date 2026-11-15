@@ -58,8 +58,28 @@ offscreen doc: gapless audio play     orchestrator (ours, one port):
 - Compose files + image pins (Kokoro-FastAPI CPU, Chatterbox-TTS-Server
   Turbo/GPU), orchestrator routes (propose `POST /v1/render`,
   `GET /v1/audio/{hash}`, `GET /health`), per-sentence Opus params,
-  Chatterbox idle-evict mechanism (server-native flag or wrapper).
+  Chatterbox idle-evict via devnen `/api/unload` on a timer.
 - Extension file list: manifest, content script, service worker, offscreen
   doc, popup; Readability + splitter + highlight mapping from server
   word/sentence timings.
 - First-boot proof: one NovelBuddy chapter end-to-end.
+
+## Locked decisions (research rounds, 2026-11-15)
+
+- Server: adopt images + thin orchestrator; Kokoro = FastAPI image (CPU,
+  always warm, 0 VRAM); Turbo idle-evicts even with 16GB+ headroom.
+- Orchestrator: preempt queue (recency priority, pause/resume, coalesce),
+  per-sentence Opus cache (5GB LRU default), unified timings manifest
+  (Enhanced-LRC per chapter; Kokoro word timings passthrough, Chatterbox
+  sentence-only + length-weighted fill), SSE progress, OpenAI-compat shim.
+- Extension: WXT + Preact overlay (Shadow DOM) + React popup/options;
+  `<all_urls>` upfront; unlisted CWS listing; stop-at-chapter-end;
+  OCR chapters out of scope (fail loud).
+- UI: full-takeover card-lyrics overlay (ambient-blur, sentence default,
+  karaoke toggle, focus span 1/3/5, 4 themes, smooth-follow 40% anchor);
+  TNs dropped entirely; acronyms = builder ABX call.
+- Text: keep our split/normalize/pron-dict in orchestrator (cache-keyed),
+  plain-text + IPA passthrough; gates kept (min-length, challenge
+  signatures hard-block, language-ratio warn-only).
+- DB: SQLite WAL metadata + sharded flat Opus files; key change = new
+  key, LRU ages the old (no storms).
