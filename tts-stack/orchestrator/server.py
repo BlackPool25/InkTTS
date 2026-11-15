@@ -17,7 +17,7 @@ from .queue import PREFETCH_K
 
 KOKORO_URL = os.environ.get("KOKORO_URL", "http://127.0.0.1:8880")
 CHATTERBOX_URL = os.environ.get("CHATTERBOX_URL", "http://127.0.0.1:8004")
-CACHE_DIR = os.environ.get("CACHE_DIR", "/tmp/inkcast-cache")
+CACHE_DIR = os.environ.get("CACHE_DIR", "/tmp/inktts-cache")
 CACHE_CAP = int(os.environ.get("CACHE_CAP_GB", "5")) * 1024**3
 
 CACHE = Cache(CACHE_DIR, CACHE_CAP)

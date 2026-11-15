@@ -18,3 +18,8 @@ ops/lan.key
 
 extension/.output/
 extension/node_modules/
+
+extension/.wxt/
+extension/proof/*.png
+tts-stack/proof/*.opus
+tts-stack/proof/*.json

@@ -37,7 +37,7 @@ async function main(): Promise<void> {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   app.innerHTML = `
-    <h1 style="font-size:18px">InkCast settings</h1>
+    <h1 style="font-size:18px">InkTTS settings</h1>
     <div class="card"><h2>Server</h2>
       <p class="sub">Your LAN TTS stack URL. Same setting as the popup — either side saves it.</p>
       <label>Server URL<input id="serverurl" type="text" placeholder="http://192.168.x.x:8095" value="${esc(s.serverUrl)}" /></label>
@@ -227,7 +227,7 @@ async function main(): Promise<void> {
     const blob = new Blob([JSON.stringify(cur, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'inkcast-settings.json';
+    a.download = 'inktts-settings.json';
     a.click();
   };
   document.getElementById('restore')!.onclick = () => (document.getElementById('restore-file') as HTMLInputElement).click();

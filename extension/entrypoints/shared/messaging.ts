@@ -61,8 +61,8 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   autoplayNext: false,
 };
 
-const EPHEMERAL_KEY = 'inkcast.playstate';
-const SETTINGS_KEY = 'inkcast.settings';
+const EPHEMERAL_KEY = 'inktts.playstate';
+const SETTINGS_KEY = 'inktts.settings';
 
 export async function loadSettings(): Promise<ServerSettings> {
   const s = await chrome.storage.local.get(SETTINGS_KEY);

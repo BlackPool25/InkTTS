@@ -73,7 +73,7 @@ export function KaraokeFill({ frac }: { frac: number }) {
   const pct = Math.round(Math.min(1, Math.max(0, frac)) * 100);
   return (
     <span
-      className="ink-fill"
+      className="inktts-fill"
       data-testid="karaoke-fill"
       style={{ clipPath: `inset(0 ${100 - pct}% 0 0)` }}
     />
@@ -106,8 +106,8 @@ export function Overlay(p: OverlayProps) {
   if (p.error) {
     const copy = ERROR_COPY[p.error.code];
     return (
-      <div className={`ink ink-theme-${theme}`} data-testid="overlay-error">
-        <div className="ink-error">
+      <div className={`ink inktts-theme-${theme}`} data-testid="overlay-error">
+        <div className="inktts-error">
           <h2>{copy.title}</h2>
           <p>{copy.body}</p>
           {p.error.code === 'challenge' && <button onClick={p.onRetry}>Retry</button>}
@@ -119,8 +119,8 @@ export function Overlay(p: OverlayProps) {
 
   if (p.setupNeeded) {
     return (
-      <div className={`ink ink-theme-${theme}`} data-testid="overlay-setup">
-        <div className="ink-setup">
+      <div className={`ink inktts-theme-${theme}`} data-testid="overlay-setup">
+        <div className="inktts-setup">
           <h2>Connect your TTS server</h2>
           <p>Paste your LAN URL in the popup, Test connection, then press Play.</p>
           <button onClick={p.onPlay}>Play</button>
@@ -132,29 +132,29 @@ export function Overlay(p: OverlayProps) {
 
   const [lo, hi] = visibleRange(p.activeIdx, p.sentences.length, true, span);
   return (
-    <div className={`ink ink-theme-${theme} ink-immersive`} data-testid="overlay" role="log" aria-live="polite">
+    <div className={`ink inktts-theme-${theme} inktts-immersive`} data-testid="overlay" role="log" aria-live="polite">
       {p.audioError && (
-        <div className="ink-degraded" data-testid="audio-error">
+        <div className="inktts-degraded" data-testid="audio-error">
           Audio failed: {p.audioError} <button onClick={p.onPlay}>Retry</button>
         </div>
       )}
       {p.degraded && (
-        <div className="ink-degraded" data-testid="degraded-badge">
+        <div className="inktts-degraded" data-testid="degraded-badge">
           Backup voice — GPU offline. <span>Playback continues.</span>
         </div>
       )}
-      <div className="ink-bar">
-        <span className="ink-progress" data-testid="chapter-position">{p.activeIdx + 1} / {p.sentences.length}</span>
-        <span className="ink-title" data-testid="chapter-title" title={p.novelTitle ?? undefined}>
+      <div className="inktts-bar">
+        <span className="inktts-progress" data-testid="chapter-position">{p.activeIdx + 1} / {p.sentences.length}</span>
+        <span className="inktts-title" data-testid="chapter-title" title={p.novelTitle ?? undefined}>
           {p.novelTitle ? `${p.novelTitle} — ` : ''}{p.chapterTitle || ''}
         </span>
-        {p.loading && <span className="ink-progress" data-testid="loading">{p.loadingStage === 'manifest' ? 'Rendering audio…' : 'Starting player…'}</span>}
+        {p.loading && <span className="inktts-progress" data-testid="loading">{p.loadingStage === 'manifest' ? 'Rendering audio…' : 'Starting player…'}</span>}
         {(p.phase === 'playing') ? (
           <button onClick={p.onPause} aria-label="Pause">Pause</button>
         ) : (p.phase === 'loading') ? (
           <button disabled aria-label="Starting">Starting…</button>
         ) : (p.phase === 'paused' || p.phase === 'idle') ? (
-          <button className="ink-primary" onClick={p.onPlay} aria-label={p.phase === 'idle' ? 'Play' : 'Resume'}>{p.phase === 'idle' ? 'Play' : 'Resume'}</button>
+          <button className="inktts-primary" onClick={p.onPlay} aria-label={p.phase === 'idle' ? 'Play' : 'Resume'}>{p.phase === 'idle' ? 'Play' : 'Resume'}</button>
         ) : null}
         <button onClick={p.onPrev} aria-label="Previous sentence" disabled={p.phase !== 'playing' && p.phase !== 'paused'}>|&#9664;</button>
         <button onClick={p.onNextSentence} aria-label="Next sentence" disabled={p.phase !== 'playing' && p.phase !== 'paused'}>&#9654;|</button>
@@ -166,14 +166,14 @@ export function Overlay(p: OverlayProps) {
         <button onClick={p.onExit}>Close (Esc)</button>
       </div>
       {panelOpen && (
-        <div className="ink-panel" data-testid="settings-panel">
-          <div className="ink-panel-row">
+        <div className="inktts-panel" data-testid="settings-panel">
+          <div className="inktts-panel-row">
             <span>Theme</span>
-            <div className="ink-swatches">
+            <div className="inktts-swatches">
               {(['dark', 'ambient', 'sepia', 'light'] as const).map((t) => (
                 <button
                   key={t}
-                  className={`ink-sw ink-sw-${t}`}
+                  className={`inktts-sw inktts-sw-${t}`}
                   data-t={t}
                   title={t}
                   aria-pressed={(p.theme ?? 'dark') === t}
@@ -182,9 +182,9 @@ export function Overlay(p: OverlayProps) {
               ))}
             </div>
           </div>
-          <div className="ink-panel-row">
+          <div className="inktts-panel-row">
             <span>Speed</span>
-            <div className="ink-swatches">
+            <div className="inktts-swatches">
               {[0.8, 1.0, 1.25, 1.5, 2.0].map((s) => (
                 <button
                   key={s}
@@ -196,17 +196,17 @@ export function Overlay(p: OverlayProps) {
           </div>
         </div>
       )}
-      <div className="ink-hud" data-testid="chapter-progress" title="Chapter progress">
-        <div className="ink-hpbar">
+      <div className="inktts-hud" data-testid="chapter-progress" title="Chapter progress">
+        <div className="inktts-hpbar">
           <div
-            className="ink-hpfill"
+            className="inktts-hpfill"
             style={{ width: `${p.sentences.length > 0 ? Math.round(((p.activeIdx + 1) / p.sentences.length) * 100) : 0}%` }}
           />
-          <div className="ink-hptext">{p.sentences.length > 0 ? `${p.activeIdx + 1} / ${p.sentences.length}` : ''}</div>
+          <div className="inktts-hptext">{p.sentences.length > 0 ? `${p.activeIdx + 1} / ${p.sentences.length}` : ''}</div>
         </div>
       </div>
       <div
-        className="ink-scroll"
+        className="inktts-scroll"
         ref={scroller}
         onWheel={() => {
           // User takes the wheel: pause follow now, show the Follow pill,
@@ -243,28 +243,28 @@ export function Overlay(p: OverlayProps) {
               data-testid={active ? 'line-active' : 'line'}
               data-idx={idx}
               tabIndex={active ? 0 : -1}
-              className={`ink-line${active ? ' ink-active' : ''}${dim ? ' ink-dim' : ''}${far ? ' ink-far' : ''}`}
+              className={`inktts-line${active ? ' inktts-active' : ''}${dim ? ' inktts-dim' : ''}${far ? ' inktts-far' : ''}`}
               onClick={() => p.onSeek?.(idx)}
             >
-              <span className="ink-text">{s}</span>
+              <span className="inktts-text">{s}</span>
             </div>
           );
         })}
       </div>
       {p.followPaused && (
-        <button className="ink-follow" data-testid="follow-pill" onClick={p.onResumeFollow}>
+        <button className="inktts-follow" data-testid="follow-pill" onClick={p.onResumeFollow}>
           Follow
         </button>
       )}
       {p.complete && (
-        <div className="ink-endcard" data-testid="endcard">
+        <div className="inktts-endcard" data-testid="endcard">
           <h2>Finished</h2>
           {p.novelTitle || p.chapterTitle ? (
             <p>{[p.novelTitle, p.chapterTitle].filter(Boolean).join(' — ')}</p>
           ) : null}
-          <div className="ink-endcard-row">
+          <div className="inktts-endcard-row">
             {p.prevUrl ? <button onClick={p.onPrevChapter}>Previous chapter</button> : null}
-            {p.nextUrl ? <button className="ink-primary-btn" onClick={p.onNext}>Play next chapter</button> : <p>No next chapter found.</p>}
+            {p.nextUrl ? <button className="inktts-primary-btn" onClick={p.onNext}>Play next chapter</button> : <p>No next chapter found.</p>}
           </div>
         </div>
       )}

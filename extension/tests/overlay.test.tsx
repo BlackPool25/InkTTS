@@ -17,7 +17,7 @@ describe('overlay', () => {
       <Overlay sentences={many} activeIdx={6} focusSpan={1} />,
     );
     expect(html).toContain('line-active');
-    expect(html).toContain('ink-far');
+    expect(html).toContain('inktts-far');
   });
 
   it('immersive band is -2/+3', () => {
@@ -55,15 +55,15 @@ describe('overlay', () => {
       <Overlay sentences={SENTS} activeIdx={0} />,
     );
     expect((html.match(/data-idx/g) || []).length).toBe(4);
-    expect(html).toContain('ink-far');
-    expect(html).not.toContain('ink-hidden');
+    expect(html).toContain('inktts-far');
+    expect(html).not.toContain('inktts-hidden');
   });
 
   it('control bar auto-hides (class hook present)', () => {
     const html = renderToString(
       <Overlay sentences={SENTS} activeIdx={0} />,
     );
-    expect(html).toContain('ink-bar');
+    expect(html).toContain('inktts-bar');
   });
 
   it('chapter progress bar fills with active index', () => {
@@ -71,7 +71,7 @@ describe('overlay', () => {
       <Overlay sentences={SENTS} activeIdx={1} phase="playing" />,
     );
     expect(html).toContain('chapter-progress');
-    expect(html).toContain('ink-hpfill');
+    expect(html).toContain('inktts-hpfill');
     expect(html).toContain('width:50%');
     expect(html).toContain('2 / 4');
   });

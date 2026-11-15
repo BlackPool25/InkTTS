@@ -35,7 +35,7 @@ RING_N = 200
 EVICT_IDLE_MIN = int(os.environ.get("EVICT_IDLE_MIN", "10"))
 CACHE = None  # wired by server.start(): the live Cache instance
 
-app = FastAPI(title="inkcast-tts-orchestrator", lifespan=lifespan)
+app = FastAPI(title="inktts-tts-orchestrator", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # LAN appliance; extension id pinned in docs

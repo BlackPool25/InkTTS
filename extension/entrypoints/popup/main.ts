@@ -59,7 +59,7 @@ async function main(): Promise<void> {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   app.innerHTML = `
     <div class="wrap">
-    <div class="brand"><h1>InkCast</h1><span id="dot" class="dot" title="server status"></span></div>
+    <div class="brand"><h1>InkTTS</h1><span id="dot" class="dot" title="server status"></span></div>
     <div id="now">Opening reader…</div>
     <button id="big">Play</button>
     <div class="row">
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
       <button id="opts" class="ghost">Settings</button>
     </div>
     <div id="status"></div>
-    <h3>InkCast server</h3>
+    <h3>InkTTS server</h3>
     <div class="row"><input id="url" type="text" placeholder="http://192.168.x.x:8095" value="${esc(s.serverUrl)}" /></div>
     <div class="row"><button id="test">Test connection</button></div>
     <p class="hint">Find the URL in the terminal where you ran update.sh — it prints the LAN URL.</p>

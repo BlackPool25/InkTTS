@@ -1,91 +1,118 @@
-# InkCast — LAN Novel Read-Along (GGUF TTS + Chrome Extension)
+# InkTTS — LAN Novel Read-Along
 
-Read light novels on their websites, narrated by local AI voices with
-karaoke-style highlighting. One Docker stack on your LAN renders audio;
-a Chrome extension turns any chapter page into a focused reader.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform: Linux x86_64](https://img.shields.io/badge/platform-linux%20x86__64-blue.svg)]()
+[![GPU: Vulkan / Mesa](https://img.shields.io/badge/GPU-Vulkan%20Mesa%20RADV-orange.svg)]()
+[![Engines: GGUF, no torch](https://img.shields.io/badge/engines-GGUF%20only-green.svg)]()
+[![Extension: Chrome MV3](https://img.shields.io/badge/extension-Chrome%20MV3-red.svg)]()
 
-- **Engines (GGUF, no torch):** Kokoro-82M Q8 (fast, CPU) + Chatterbox
-  Turbo Q8 (expressive, GPU) via a single CrispASR binary. ~1 GB total,
-  not ~20 GB.
-- **Server:** tiny FastAPI orchestrator — preempt render queue, per-sentence
-  Opus cache, Enhanced-LRC timings, SSE progress, OpenAI-compat shim.
-- **Extension (Manifest V3):** Readability extraction with loud gates,
-  full-takeover card-lyrics overlay, immersive focus mode, karaoke fill,
-  click-to-seek, per-site voice/model overrides.
+> Read light novels on their websites, narrated by local AI voices with a
+> read-along highlight that follows the audio. One Docker stack on your LAN
+> renders the audio; a Chrome extension turns any chapter page into a
+> focused, immersive reader.
 
-## Repo layout
+Topics: `text-to-speech` · `tts` · `kokoro` · `chatterbox` · `gguf` · `read-along` · `chrome-extension` · `novel-reader` · `lan-server` · `vulkan`
 
-- `tts-stack/` — `docker-compose.yml`, `crisp/` (engine image), `orchestrator/`
-  (queue/cache/text pipeline/API), `proof/` (server E2E evidence).
-- `extension/` — WXT + Preact source, `proof/` (browser E2E + screenshots).
-- `docs/` — `ARCHITECTURE.md` (full internals), `superpowers/` (design docs + plans).
+![Reader overlay](docs/assets/screenshots/overlay.png)
+![Playback with progress HUD](docs/assets/screenshots/overlay-playing.png)
 
-## Install (GPU host: AMD 7900 GRE class, or any x86_64 Linux)
+## Features
 
-Prereqs: Docker Engine, `/dev/dri` present (Mesa RADV). No ROCm toolkit, no
-CUDA, no Python needed on the host.
+- **28 Kokoro voices + 29 Chatterbox voices** — captured live from the models, picked from a dropdown (never typed). Chatterbox ships 28 premade MIT-licensed reference voices.
+- **Immersive-only reader** — full-takeover overlay, lit-band focus that dims the rest, chapter title header, prev/next chapter buttons, pixel health-bar chapter progress.
+- **Real playback** — gapless Web Audio chaining, tap any line to seek, pause resumes the exact sentence, speed 0.8–2.5×, autoplay across chapters.
+- **Reliable extraction** — layered title/chapter-link finder (site rules → `rel=` semantics → scored scan → validated-or-nothing), bot-check and image-only pages fail loud, never narrated.
+- **Private by design** — everything runs on your LAN. No accounts, no cloud, no telemetry. GGUF weights, no 20 GB torch stacks.
 
-```bash
-cd tts-stack && cp .env.example .env
-docker compose up -d --build kokoro orchestrator   # phase 1: Kokoro now
-curl http://localhost:8095/health                  # -> {"status":"ready",...}
-./update.sh   # prints your LAN URL, e.g. http://192.168.1.50:8095
-docker compose up -d --build chatterbox              # phase 2: expressive voice
-```
+## Quick start
 
-First boot downloads ~1 GB of GGUFs once into the `crisp-models` volume.
-`update.sh` = pull + rebuild + print URL. No Watchtower (manual updates).
-
-Extension (desktop Chrome): `pnpm install && pnpm build` in `extension/`,
-then `chrome://extensions` → Developer mode → Load unpacked →
-`extension/.output/chrome-mv3`. Paste the LAN URL in the popup, Test
-connection, open a chapter, press the extension button, play.
-
-## Use
-
-- **Overlay:** current sentence large/white, neighbors dimmed, auto-follow.
-  Click any sentence to seek. `Focus` = immersive (prev/current/next only).
-  `Aa` = karaoke word fill. `Theme` cycles dark/ambient/sepia/light. Esc exits.
-- **Settings (options page):** global voice/speed/model, theme, karaoke,
-  focus span, immersive-on-open, per-site overrides (JSON), pronunciation
-  rules (`PATTERN => say-as`), site extraction-rule overrides.
-- **End of chapter:** end card with Play-next-chapter (uses extracted link).
-  Image-only chapters, bot walls, empty pages: loud error states, never
-  silent narration.
-
-## Voices & models
-
-- Kokoro: `af_heart` default; any `kokoro-voice-*.gguf` pack dropped next to
-  the model file becomes selectable (orchestrator maps UI name → filename).
-- Chatterbox: server default voice; per-request reference-audio voices are
-  a future upload flow. No cloning ever.
-- Text pipeline: site-rule container → Readability fallback → strips →
-  promo sweep → next-page stitch (cap 5) → gates (short/boilerplate/
-  challenge/image-only) → split → normalize (numbers/abbrevs/acronyms) →
-  pron-dict → ≤200-char/≤40-word request budget → per-sentence Opus +
-  Enhanced-LRC (word tags Kokoro, line-sweep Chatterbox).
-
-## Verify
+Prereqs: Docker Engine on an x86_64 Linux host. GPU is optional (AMD/NVIDIA via
+Vulkan); without one, Chatterbox stays idle and Kokoro renders on CPU.
 
 ```bash
-cd tts-stack && python3 -m pytest orchestrator/tests/ -q   # 28 tests
-cd ../extension && pnpm vitest run && pnpm typecheck && pnpm build
-CACHE_DIR=/tmp/e2e PYTHONPATH=tts-stack python3 tts-stack/proof/e2e_live.py
-python3 extension/proof/browser_e2e_pw.py   # needs Playwright Chromium
+cd tts-stack
+docker compose up -d --build        # pulls engines, downloads ~1.3 GB of GGUFs once
+./update.sh                         # rebuilds, then prints your LAN URL, e.g. http://192.168.29.101:8095
 ```
 
-Proof artifacts: `tts-stack/proof/SERVER_E2E.md`, `extension/proof/BROWSER_E2E.md`
-+ screenshots.
+Load the extension:
+
+1. `chrome://extensions` → Developer mode → **Load unpacked** → `extension/.output/chrome-mv3` (run `pnpm install && pnpm build` in `extension/` first — needs Node 20+).
+2. Click the InkTTS icon → paste your LAN URL → **Test connection**.
+3. Open any novel chapter → **Play chapter**.
+
+That's it. First Play on a chapter takes ~10 s (rendering); after that the highlight follows the voice on its own.
+
+## How it works
+
+```mermaid
+flowchart LR
+    Page["Novel page"] -->|extract| CS["Content script\n(overlay + extract)"]
+    CS -->|BOOT paragraphs| SW["Service worker\n(stateless relay)"]
+    SW -->|BOOT| OFF["Offscreen doc\n(SSE + Web Audio)"]
+    OFF <-->|manifest / tap / audio / events| ORCH["Orchestrator :8095\n(queue + cache + SSE)"]
+    ORCH --> KOK["Kokoro-82M Q8\n28 voices"]
+    ORCH --> CB["Chatterbox Turbo Q8\n29 voices (GPU)"]
+    OFF -->|LINE_AT| CS
+```
+
+Full internals, contracts, and state machines: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Configuration
+
+All settings live in the extension options page (the popup is transport-only):
+
+| Section | What |
+|---|---|
+| Server | LAN URL + Test connection (mirrors the popup) |
+| Voice | Model (Kokoro/Chatterbox) + voice dropdown captured from the engine, speed slider 0.5–2.5× |
+| Reading | Theme (dark/ambient/sepia/light), focus band width, autoplay next chapter |
+| Per-site overrides | Domain → voice/model JSON |
+| Pronunciation | `pattern => say-as` lines, baked into renders (cache-safe) |
+| Site rules | Extraction override selectors when a site changes layout |
+
+In-reader settings (theme, speed) are also available without leaving the page.
+
+## Project structure
+
+```
+tts-stack/
+  docker-compose.yml   # kokoro + chatterbox (CrispASR Vulkan) + orchestrator
+  crisp/               # engine image (GGUF only, no torch/ROCm)
+  orchestrator/        # FastAPI: queue, Opus cache, text pipe, SSE, /voices
+  proof/               # server E2E scripts
+  update.sh            # rebuild + print LAN URL
+extension/
+  entrypoints/         # background / content / offscreen / popup / options / welcome
+  tests/               # vitest (extraction, overlay phases, messaging)
+  proof/               # Playwright browser E2E (mount → playback → challenge)
+docs/
+  ARCHITECTURE.md      # MDA models + contracts + diagrams
+  assets/screenshots/  # reader screenshots
+```
+
+## Development
+
+```bash
+# extension
+cd extension && pnpm install && pnpm typecheck && pnpm vitest run && pnpm build
+python3 -u proof/browser_e2e_pw.py   # full browser proof (needs the stack up)
+
+# stack
+cd tts-stack && python3 -m pytest orchestrator/tests/ -q
+```
 
 ## Troubleshooting
 
-- `chatterbox` unhealthy on AMD: needs `/dev/dri` + `video`/`render` groups;
-  falls back to CPU automatically (slow). NVIDIA hosts: use the CUDA build
-  path instead (see ARCHITECTURE.md).
-- Extension can't reach server: LAN IP changes (DHCP) — rerun `update.sh`;
-  check firewall on 8095; Test-connection in the popup distinguishes
-  DNS/timeout/refused.
-- Challenge page: solve it in the tab, press Retry — overlay listens for
-  the wall clearing.
-- Wrong-language/garbage narration: extraction gates fail loud by design;
-  per-site selector overrides live in options.
+| Symptom | Cause / fix |
+|---|---|
+| "Starting player…" forever | Audio doc didn't ack — Retry (it recreates the doc and retries automatically now) |
+| "Server is not answering" | LAN URL wrong or host asleep — Test connection in popup/options |
+| "Player did not answer" | Reload the extension, refresh the chapter page, Play |
+| Chapter says 88 lines then merges | Stale cache from before the sentence merge — replay once to re-render |
+| Chatterbox non-default voice fails | Tick the responsibility checkbox in options (engine requires it per request) |
+| Popup says "refresh the chapter page" | Extension was reloaded — content scripts only inject on navigation |
+
+## License
+
+MIT — see [LICENSE](LICENSE).

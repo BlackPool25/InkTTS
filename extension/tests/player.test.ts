@@ -17,9 +17,9 @@ describe('player contracts', () => {
     const { savePlayState, loadPlayState } = await import('../entrypoints/shared/messaging');
     await savePlayState({ docId: 'd', hash: 'abc123', idx: 10, offsetMs: 450, rate: 1.0 });
     expect(set).toHaveBeenCalledWith({
-      'inkcast.playstate': { docId: 'd', hash: 'abc123', idx: 10, offsetMs: 450, rate: 1.0 },
+      'inktts.playstate': { docId: 'd', hash: 'abc123', idx: 10, offsetMs: 450, rate: 1.0 },
     });
-    const state = { 'inkcast.playstate': { docId: 'd', hash: 'abc123', idx: 10, offsetMs: 450, rate: 1 } };
+    const state = { 'inktts.playstate': { docId: 'd', hash: 'abc123', idx: 10, offsetMs: 450, rate: 1 } };
     (globalThis as Record<string, unknown>).chrome = {
       storage: { session: { set, get: vi.fn().mockResolvedValue(state) }, local: { get: vi.fn(), set: vi.fn() } },
       runtime: { sendMessage: vi.fn() },

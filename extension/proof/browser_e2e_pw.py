@@ -20,7 +20,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-EXT = str(Path("/home/shreyas/projects/InkCast/extension/.output/chrome-mv3").resolve())
+EXT = str(Path("/home/shreyas/projects/InkTTS/extension/.output/chrome-mv3").resolve())
 EXE = "/home/shreyas/.cache/ms-playwright/chromium-1255/chrome-linux64/chrome"
 
 FIXTURE = """<html><head><title>Ch 1 - Sunny Day</title></head><body>
@@ -106,7 +106,7 @@ def main():
                 try:
                     name = w.evaluate(
                         "() => chrome.runtime.getManifest().name")
-                    if name == "InkCast Read-Along":
+                    if name == "InkTTS Read-Along":
                         ours = w
                         break
                 except Exception:
@@ -147,29 +147,29 @@ def main():
             }""")
         host = wait_until(
             lambda: page.evaluate(
-                "() => document.getElementById('inkcast-overlay-host') !== null"),
+                "() => document.getElementById('inktts-overlay-host') !== null"),
             timeout=10)
         mark("mount", t0)
         print("overlay mounted:", host)
         assert host, "overlay did not mount"
         n = page.evaluate(
-            "() => document.getElementById('inkcast-overlay-host')"
+            "() => document.getElementById('inktts-overlay-host')"
             ".shadowRoot.querySelectorAll('[data-testid=line],[data-testid=line-active]').length")
         print("sentences rendered:", n)
         assert n == 3, f"expected 3, got {n}"
         a1 = page.evaluate(
-            "() => document.getElementById('inkcast-overlay-host')"
+            "() => document.getElementById('inktts-overlay-host')"
             ".shadowRoot.querySelector('[data-testid=line-active]').textContent.slice(0, 40)")
         print("active line:", (a1 or "").strip()[:60])
         t0 = time.monotonic()
         page.evaluate(
-            "() => document.getElementById('inkcast-overlay-host')"
+            "() => document.getElementById('inktts-overlay-host')"
             ".shadowRoot.querySelectorAll('[data-testid=line]')[0].click()")
         a2 = None
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             a2 = page.evaluate(
-                "() => document.getElementById('inkcast-overlay-host')"
+                "() => document.getElementById('inktts-overlay-host')"
                 ".shadowRoot.querySelector('[data-testid=line-active]').textContent.slice(0, 40)")
             if a2 != a1:
                 break
@@ -177,12 +177,12 @@ def main():
         mark("seek", t0)
         print("after seek:", (a2 or "").strip()[:60])
         assert a2 != a1, "seek did not move the active line"
-        page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/overlay.png")
+        page.screenshot(path="/home/shreyas/projects/InkTTS/extension/proof/overlay.png")
         print("screenshot saved: proof/overlay.png")
 
         # Modes: immersive-only (always on) + title header; theme cycle; settings panel.
         click = """(text) => {
-          const h = document.getElementById('inkcast-overlay-host');
+          const h = document.getElementById('inktts-overlay-host');
           const btns = [...h.shadowRoot.querySelectorAll('button')];
           const b = btns.find(x => x.textContent.includes(text));
           if (!b) throw new Error('no button ' + text);
@@ -192,46 +192,46 @@ def main():
         # Immersive-only: no Focus toggle exists anymore; the lit band + title are always on.
         n_imm = wait_until(
             lambda: (lambda v: v if v == 3 else None)(page.evaluate(
-                "() => document.getElementById('inkcast-overlay-host')"
+                "() => document.getElementById('inktts-overlay-host')"
                 ".shadowRoot.querySelectorAll('[data-testid=line],[data-testid=line-active]').length")),
             timeout=5)
         mark("immersive", t0)
         print("immersive lines:", n_imm)
         assert n_imm == 3, f"immersive should keep all 3, got {n_imm}"
         ink_cls = page.evaluate(
-            "() => document.getElementById('inkcast-overlay-host')"
+            "() => document.getElementById('inktts-overlay-host')"
             ".shadowRoot.querySelector('[data-testid=overlay]').className")
-        assert "ink-immersive" in ink_cls, "overlay must be immersive-only"
+        assert "inktts-immersive" in ink_cls, "overlay must be immersive-only"
         title = page.evaluate(
-            "() => document.getElementById('inkcast-overlay-host')"
+            "() => document.getElementById('inktts-overlay-host')"
             ".shadowRoot.querySelector('[data-testid=chapter-title]')?.textContent")
         print("chapter title:", (title or "").strip()[:60])
         far = page.evaluate(
-            "() => !!document.getElementById('inkcast-overlay-host')"
-            ".shadowRoot.querySelector('.ink-far, .ink-dim')")
+            "() => !!document.getElementById('inktts-overlay-host')"
+            ".shadowRoot.querySelector('.inktts-far, .inktts-dim')")
         print("dim wash present:", far)
-        page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/overlay-immersive.png")
+        page.screenshot(path="/home/shreyas/projects/InkTTS/extension/proof/overlay-immersive.png")
         t0 = time.monotonic()
         page.evaluate(f"({click})('Theme')")
         cls = wait_until(
-            lambda: (lambda v: v if "ink-theme-ambient" in (v or "") else None)(page.evaluate(
-                "() => document.getElementById('inkcast-overlay-host')"
+            lambda: (lambda v: v if "inktts-theme-ambient" in (v or "") else None)(page.evaluate(
+                "() => document.getElementById('inktts-overlay-host')"
                 ".shadowRoot.querySelector('[data-testid=overlay]').className")),
             timeout=5)
         mark("theme", t0)
         print("theme class:", cls)
-        assert "ink-theme-ambient" in cls, "theme did not cycle to ambient"
+        assert "inktts-theme-ambient" in cls, "theme did not cycle to ambient"
         t0 = time.monotonic()
         page.evaluate(f"({click})('Settings')")
         panel = wait_until(
             lambda: page.evaluate(
-                "() => !!document.getElementById('inkcast-overlay-host')"
+                "() => !!document.getElementById('inktts-overlay-host')"
                 ".shadowRoot.querySelector('[data-testid=settings-panel]')"),
             timeout=5)
         mark("panel", t0)
         print("settings panel:", panel)
         assert panel, "in-overlay settings panel missing"
-        page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/overlay-settings.png")
+        page.screenshot(path="/home/shreyas/projects/InkTTS/extension/proof/overlay-settings.png")
 
         # Settings pages render (popup + options) — layout proof. Runs on a
         # 2nd page BEFORE playback: the background routes player->page
@@ -243,10 +243,10 @@ def main():
         try:
             pop.goto(f"chrome-extension://{eid}/popup.html")
             pop.wait_for_load_state("domcontentloaded", timeout=10000)
-            pop.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/popup.png")
+            pop.screenshot(path="/home/shreyas/projects/InkTTS/extension/proof/popup.png")
             pop.goto(f"chrome-extension://{eid}/options.html")
             pop.wait_for_load_state("domcontentloaded", timeout=10000)
-            pop.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/options.png",
+            pop.screenshot(path="/home/shreyas/projects/InkTTS/extension/proof/options.png",
                            full_page=True)
         finally:
             pop.close()
@@ -257,7 +257,7 @@ def main():
         # --- REAL PLAYBACK: server URL in storage, PLAY, auto-advance ---
         t0 = time.monotonic()
         ours.evaluate(
-            "chrome.storage.local.set({'inkcast.settings': {serverUrl: 'http://127.0.0.1:8095'}})")
+            "chrome.storage.local.set({'inktts.settings': {serverUrl: 'http://127.0.0.1:8095'}})")
         ours.evaluate(
             """async () => {
               const tabs = await chrome.tabs.query({currentWindow: true});
@@ -268,7 +268,7 @@ def main():
         deadline = time.monotonic() + 180  # unchanged ceiling
         while time.monotonic() < deadline:
             a3 = page.evaluate(
-                "() => document.getElementById('inkcast-overlay-host')"
+                "() => document.getElementById('inktts-overlay-host')"
                 ".shadowRoot.querySelector('[data-testid=line-active]')?.textContent?.slice(0, 40)")
             if a3 and a3 != a2:
                 break
@@ -276,7 +276,7 @@ def main():
         mark("playback", t0)
         print("auto-advanced to:", (a3 or "").strip()[:60], flush=True)
         assert a3 and a3 != a2, "playback did not auto-advance (no audio chain)"
-        page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/overlay-playing.png")
+        page.screenshot(path="/home/shreyas/projects/InkTTS/extension/proof/overlay-playing.png")
         print("screenshot saved: proof/overlay-playing.png", flush=True)
 
         t0 = time.monotonic()
@@ -290,7 +290,7 @@ def main():
             }""")
         err = wait_until(
             lambda: (lambda v: v if v and "bot check" in v else None)(page.evaluate(
-                "() => document.getElementById('inkcast-overlay-host')"
+                "() => document.getElementById('inktts-overlay-host')"
                 "?.shadowRoot.querySelector('[data-testid=overlay-error]')?.textContent?.slice(0, 80)")),
             timeout=15)
         mark("challenge", t0)

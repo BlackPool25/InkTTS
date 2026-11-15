@@ -1,3 +1,7 @@
+# NOTE: the compose project name stays `inkcast-tts` on purpose: Docker
+# prefixes volumes with it (inkcast-tts_crisp-models holds ~1.3GB of GGUFs
+# + the audio cache). Renaming it would orphan that data and force a
+# full re-download. Everything else is branded InkTTS.
 name: inkcast-tts
 
 services:
@@ -5,8 +9,8 @@ services:
     # CrispASR GGUF kokoro-82m-q8: tiny, CPU, always warm. Replaces the
     # 2GB Kokoro-FastAPI image. Models auto-download into crisp-models.
     build: ./crisp
-    image: inkcast-crisp:latest
-    container_name: inkcast-kokoro
+    image: inktts-crisp:latest
+    container_name: inktts-kokoro
     restart: unless-stopped
     command: ["--backend", "kokoro", "-m", "auto",
               "--threads", "10",
@@ -37,8 +41,8 @@ services:
     # CrispASR GGUF chatterbox (Turbo-class) on AMD Vulkan: full GPU via
     # FORCE_GPU. Replaces the torch server. Same crisp image as kokoro.
     build: ./crisp
-    image: inkcast-crisp:latest
-    container_name: inkcast-chatterbox
+    image: inktts-crisp:latest
+    container_name: inktts-chatterbox
     restart: unless-stopped
     command: ["--backend", "chatterbox", "-m", "auto",
               "--voice-dir", "/data/.cache/crispasr",
@@ -68,7 +72,7 @@ services:
     # Semantic-clean fallback, flagged chapters ONLY (never hot path).
     # Tiny instruct model, loads on demand, idles free.
     image: ghcr.io/ggerganov/llama.cpp:server
-    container_name: inkcast-cleaner
+    container_name: inktts-cleaner
     restart: unless-stopped
     ports:
       - "127.0.0.1:8088:8080"
@@ -92,8 +96,8 @@ services:
     # Thin routing layer (ours): preempt queue, cache, LRC, SSE, OpenAI shim.
     # Joined in plan Task 4; single LAN-open port (the extension's URL).
     build: ./orchestrator
-    image: inkcast-orchestrator:latest
-    container_name: inkcast-orchestrator
+    image: inktts-orchestrator:latest
+    container_name: inktts-orchestrator
     restart: unless-stopped
     ports:
       - "${ORCH_PORT:-8095}:8095"

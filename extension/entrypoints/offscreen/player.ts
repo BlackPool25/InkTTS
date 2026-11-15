@@ -79,7 +79,7 @@ export class Player {
           voice, speed: settings?.speed, model,
           pron: settings?.pron ?? '',
           consent: settings?.voiceConsent
-            ? 'Operator accepts responsibility for using this non-default reference voice for playback (attested in InkCast settings).'
+            ? 'Operator accepts responsibility for using this non-default reference voice for playback (attested in InkTTS settings).'
             : '',
         }),
       });

@@ -11,7 +11,7 @@ import urllib.request
 
 from playwright.sync_api import sync_playwright
 
-EXT = "/home/shreyas/projects/InkCast/extension/.output/chrome-mv3"
+EXT = "/home/shreyas/projects/InkTTS/extension/.output/chrome-mv3"
 EXE = "/home/shreyas/.cache/ms-playwright/chromium-1255/chrome-linux64/chrome"
 ORCH = "http://127.0.0.1:8095"
 CHAPTER = "https://novelbuddy.me/shadow-slave/chapter-1-nightmare-begins"
@@ -49,7 +49,7 @@ def main():
         for _ in range(30):
             for w in ctx.service_workers:
                 try:
-                    if w.evaluate("() => chrome.runtime.getManifest().name") == "InkCast Read-Along":
+                    if w.evaluate("() => chrome.runtime.getManifest().name") == "InkTTS Read-Along":
                         ours = w
                         break
                 except Exception:
@@ -68,7 +68,7 @@ def main():
         }""")
         page.wait_for_timeout(2000)
         err = page.evaluate(
-            "() => document.getElementById('inkcast-overlay-host')"
+            "() => document.getElementById('inktts-overlay-host')"
             "?.shadowRoot.querySelector('[data-testid=overlay-error]')?.textContent?.slice(0,120)")
         if err:
             print("EXTRACTION RESULT:", err.strip()[:120], flush=True)
@@ -76,16 +76,16 @@ def main():
             ctx.close()
             return
         n = page.evaluate(
-            "() => document.getElementById('inkcast-overlay-host')"
+            "() => document.getElementById('inktts-overlay-host')"
             ".shadowRoot.querySelectorAll('[data-testid=line],[data-testid=line-active]').length")
         print("sentences extracted:", n, flush=True)
         assert n and n > 5, f"too few sentences: {n}"
         sents = page.evaluate(
-            """[...document.getElementById('inkcast-overlay-host').shadowRoot
+            """[...document.getElementById('inktts-overlay-host').shadowRoot
               .querySelectorAll('[data-testid=line],[data-testid=line-active]')]
               .slice(0, 6).map(e => e.textContent.slice(0, 400))""")
         print("sample[0]:", sents[0][:100], flush=True)
-        page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/website.png")
+        page.screenshot(path="/home/shreyas/projects/InkTTS/extension/proof/website.png")
         print("screenshot: proof/website.png", flush=True)
         print("pageerrors:", errors if errors else "none", flush=True)
 

@@ -18,7 +18,7 @@ Bugs this E2E caught and fixed:
 - SQLite connection shared across worker/API threads -> `check_same_thread=False` + lock (`cache.py` rewrite).
 - `GET /audio` read `CACHE` off the wrong module -> module-level `CACHE = None` in `api.py`, wired by `server.start()` (+ lifespan startup in the image).
 
-Run: `CACHE_DIR=/tmp/inkcast-e2e PYTHONPATH=tts-stack python3 proof/e2e_live.py`
+Run: `CACHE_DIR=/tmp/inktts-e2e PYTHONPATH=tts-stack python3 proof/e2e_live.py`
 (Kokoro `remsky/kokoro-fastapi-cpu:v0.10.0` live at 127.0.0.1:8880.)
 
 - `GET /health` → `{"status":"ready","engines":{"kokoro":"up","chatterbox":"idle"}}`

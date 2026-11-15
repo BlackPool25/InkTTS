@@ -1,93 +1,146 @@
-# InkCast Architecture (v2: GGUF read-along)
+# InkTTS Architecture (MDA)
 
-Single-user LAN system. Chrome extension (presentation + extraction) talks
-to one Docker stack (fetch-nothing, synth-everything). Text flows one way
-— page → orchestrator → engines → audio + timings → page.
+Three modeling levels: **CIM** (what the reader experiences), **PIM**
+(platform-independent design), **PSM** (the concrete stack). Mermaid
+diagrams render on GitHub.
 
-```text
-Chapter page ──extract──▶ content script ──POST /manifest──▶ orchestrator
-                                                              ├─ queue (tap > next > prefetch + age, per-doc, 1+1 lanes)
-                                                              ├─ textpipe (split/normalize/pron-dict/gates/budget)
-                                                              ├─ cache (SQLite WAL + sharded .opus, canonical key)
-                                                              ├─ render (Kokoro server / Chatterbox server, breaker)
-                                                              └─ SSE /events + GET /audio + Enhanced-LRC
-Content ◀── overlay (highlight/seek/modes) ◀── offscreen (SSE+prefetch+WebAudio)
+## CIM — domain model
+
+```mermaid
+classDiagram
+    class Novel { title }
+    class Chapter { label, url }
+    class Sentence { idx, text }
+    class Voice { engine, name }
+    class PlayState { chapter, idx, offsetMs }
+    Novel "1" --> "*" Chapter : contains
+    Chapter "1" --> "*" Sentence : splits into
+    Sentence "*" --> "1" Voice : rendered by
+    PlayState --> Chapter : resumes
 ```
 
-## Services (`tts-stack/docker-compose.yml`)
+A reader opens a **Chapter** on its website. InkTTS extracts the chapter,
+splits it into **Sentences** (the canonical unit: one overlay line = one
+audio file), renders each with a **Voice**, and tracks **PlayState** so
+pause/resume/kill all land on the exact sentence and offset.
 
-| Service | Image | Role | GPU |
-|---|---|---|---|
-| kokoro | `inkcast-crisp` (CrispASR Vulkan) | Kokoro-82M Q8 server, `--voice` default + `--voice-dir`, always warm | CPU |
-| chatterbox | `inkcast-crisp` | Chatterbox Turbo Q8 server, `FORCE_GPU=1` | Vulkan `/dev/dri` |
-| orchestrator | built `orchestrator/` | queue/cache/LRC/SSE/OpenAI shim, only LAN-open port (`${ORCH_PORT:-8095}`) | none |
-| cleaner | llama.cpp server (profile-gated, opt-in) | LLM semantic-clean for gate-tripped chapters only | none |
+## PIM — components (platform-independent)
 
-CrispASR image (`crisp/Dockerfile`): Ubuntu + Mesa Vulkan + prebuilt binary;
-models auto-download once into the `crisp-models` volume. Both engines OpenAI-
-compatible (`POST /v1/audio/speech`); orchestrator treats them as HTTP
-backends keyed by `engine_tag` in the cache key.
+```mermaid
+flowchart TB
+    subgraph Browser
+        EXT["Extractor\nchallenge gate → site rule → readability → gates"]
+        UI["Reader UI\nimmersive overlay, phases, progress"]
+        REL["Relay\nstateless message router"]
+        AU["Audio Engine\nSSE + prefetch + gapless chain"]
+    end
+    subgraph LAN["LAN server"]
+        Q["Render Queue\npreempt by tap proximity"]
+        SPLIT["Text Pipe\nsplit + merge + pron + gate"]
+        CACHE["Opus Cache\nkeyed by text+voice+speed+dict+model"]
+        SSE["Event Bus\nready/failed/degraded/complete + replay"]
+        ENG["TTS Engines\nKokoro CPU / Chatterbox GPU"]
+    end
+    EXT --> UI
+    UI <-->|BOOT / LINE_AT / SEEK / STATE| REL
+    REL <--> AU
+    AU <-->|manifest / tap / audio / events| Q
+    Q --> SPLIT --> ENG --> CACHE
+    ENG --> SSE --> AU
+```
 
-## Orchestrator internals
+Contracts:
 
-- **Queue** (`queue.py`): heap `(prio, seq)` per doc; tap=0 preempts, next=1,
-  prefetch=2+d; every 4th pop forces oldest prefetch (no starvation);
-  seek bumps epoch (drops out-of-window jobs of that doc only); TTL purge +
-  doc close. 1 Kokoro + 1 Chatterbox in flight max.
-- **Cache** (`cache.py`): key = `sha1(norm_text|engine_tag|voice|speed_q|dict_ver|pipe_ver)`;
-  2-level sharded `.opus`, atomic tmp+rename+fsync; thread-safe (lock);
-  LRU evict 10% over cap; live-window pins; audio-miss re-queues with
-  `rendering` re-emit (never 404-stalls); ENOSPC bypass (serve uncached).
-- **Render** (`render.py`): retries 2× backoff, per-sentence timeout, poison
-  (>400 chars/empty); circuit breaker (3 consecutive Chatterbox failures →
-  chapter-sticky Kokoro + single `degraded` notice); voice mapping
-  (`af_heart` → `kokoro-voice-af_heart.gguf`; Chatterbox = server default).
-- **Text** (`textpipe.py`): abbrev-safe split, CJK boundaries, 25s cap;
-  normalise (numbers/abbrevs/acronyms via `pron.py`), TN strip, gates
-  (min-length 20, Turnstile/challenge hard-block, language-ratio warn);
-  ≤200-char/≤40-word chunks; Enhanced-LRC emitter (word tags Kokoro,
-  plain lines Chatterbox).
-- **API** (`api.py`): `POST /manifest|/tap`, `GET /audio/{hash}` (Range +
-  immutable ETag), `GET /events?doc_id=` (bounded 200-event ring, resync on
-  gap, terminal `complete`), `POST /v1/audio/speech` shim, `/health`
-  (ready/warming/degraded). CORS open for the extension origin.
-- **Worker** (`server.py`): daemon thread drains queue → render → store →
-  emit; cache lookups short-circuit before render.
+- **Overlay lines == server sentences == audio files.** The orchestrator
+  owns the split (`POST /manifest` returns the canonical list); the
+  overlay re-aligns to it via `MANIFEST_OK`. Never the reverse.
+- **Single resume triple.** `{docId, idx, offsetMs}` persisted on every
+  line change; offscreen death is a normal, expected resume path.
+- **Targeted messages.** Every message carries `target: sw|offscreen|content`;
+  receivers ignore non-targets and never re-emit (no relay loops).
+- **Provable delivery.** `BOOT` is retried until `BOOT_ACK` (doc recreated
+  on the 2nd try); a 10 s bound names the silent half (`boot/*` vs server).
 
-## Extension internals (`extension/`)
+## PSM — concrete mapping
 
-WXT + TypeScript + Preact. MV3 hard constraints drive the shape: service
-workers die ~30s idle and cannot play audio or hold SSE — so the **offscreen
-document** owns SSE + prefetch + playback (Web Audio `AudioBufferSourceNode`
-chaining, not `<audio>` tags); the **worker** is a thin relay + alarms;
-**content scripts** never fetch LAN (mixed-content) — all server calls go
-through worker/offscreen.
+| PIM | PSM |
+|---|---|
+| Extractor | WXT content script, `@mozilla/readability`, block-level promo decompose, layered nav (`rel=` → hooks → scored scan → validated) |
+| Reader UI | Preact in Shadow DOM, phase machine (`idle/loading/playing/paused/error/done`), pixel HP progress bar |
+| Relay | MV3 service worker, stateless, `GET_STATE` mirror for the popup |
+| Audio Engine | Offscreen document, Web Audio `AudioBufferSourceNode` chain, `Last-Event-ID` SSE resume + heartbeat watchdog |
+| Render Queue | Python `heapq`, tap=0 / next=1 / prefetch=2+d, per-doc epochs, 1 h entry TTL |
+| Text Pipe | `split_sentences` (300-char cap, 60-char stub merge), pron `=>` rules with cache-busting dict version |
+| Opus Cache | Filesystem, key = `sha1(text\|engine_tag\|voice\|speed\|dict_ver\|model)`, 5 GB cap |
+| Engines | CrispASR Vulkan GGUF: `kokoro-82m-q8` (+28 voice packs) and `chatterbox-v3` (+28 MIT ref voices), `/v1/voices` listing |
 
-- `content/extract.ts`: challenge check (Turnstile iframe/title signals) →
-  site-rule container first → Readability on cloned doc → strip ads/comments
-  → promo-regex sweep → next-page stitch (cap 5, URL discipline, per-page
-  challenge aborts) → loud gates. DOM-order paragraphs; title excluded.
-- `content/overlay.tsx` + `mount.tsx`: Shadow-DOM takeover, ambient-blur
-  themes, smooth-follow 40% anchor, 750ms scroll cooldown, keyboard
-  (space/arrows/Esc), per-error overlays, end card, degraded badge.
-- `content/sync.ts`: Enhanced-LRC parse → binary-search anchor + interpolated
-  word fill (sustain-not-gap, 80ms minimum), rate-scaled lookups, line-sweep
-  fallback, seek = file start (no intra-file word offsets).
-- `offscreen/player.ts`: SSE subscribe, prefetch K=3, Range-resume by
-  {hash,idx,offsetMs}, `degraded`/`complete` events, rate 0.8–2.5x.
-- `popup/` + `options/`: transport + Test-connection + setup hint; full
-  settings (voice/speed/model, themes, karaoke, focus, immersive default,
-  per-site JSON, pron-dict, site-rule overrides) with save + notify.
-- Storage: `storage.local` (+unlimitedStorage) for rules/pron/cache-index;
-  `storage.session` for ephemeral playhead. Never blob URLs across restarts.
+## Runtime sequences
 
-## Data & safety
+### Play (cold)
 
-- No accounts, no sync server, no wall: LAN-open plain HTTP (network-trust,
-  like a printer). Extension validates server URL via Test-connection with
-  distinct DNS/timeout/refused errors.
-- Disk: 5 GB cache cap default (LRU); ~25 KB per Kokoro sentence; models
-  volume separate from cache. `update.sh` = pull + rebuild + print LAN URL.
-- Failure posture: engines fail loudly and independently (never silent voice
-  swaps); challenge/image/empty pages fail loud in-page; GPU loss degrades
-  Chatterbox to Kokoro with a persistent badge.
+```mermaid
+sequenceDiagram
+    participant P as Popup
+    participant C as Content
+    participant S as Service worker
+    participant O as Offscreen
+    participant R as Orchestrator
+    P->>S: PLAY
+    S->>C: PLAY (active tab)
+    C->>C: extract + mount overlay
+    C->>S: BOOT {paragraphs}
+    S->>O: BOOT (ensure doc, retry until ack)
+    O->>C: BOOT_ACK
+    O->>R: POST /manifest
+    R-->>O: MANIFEST_OK (via C re-align)
+    R->>R: render idx 0.. (tap priority)
+    R-->>O: SSE ready
+    O->>R: GET /audio/{hash}
+    O->>O: decode + play
+    O->>C: LINE_AT
+```
+
+### Pause / resume
+
+```mermaid
+stateDiagram-v2
+    [*] --> idle
+    idle --> loading : Play
+    loading --> playing : LINE_AT
+    loading --> error : 10s bound
+    playing --> paused : Pause (source detached, offset saved)
+    paused --> playing : Resume (same idx + offset)
+    playing --> done : CHAPTER_COMPLETE
+    done --> idle : 4s end card → next chapter (cancellable)
+    error --> loading : Retry (recreates dead doc)
+```
+
+Pause detaches the audio source *before* stopping it, because `stop()`
+fires `onended` — without the guard every pause would auto-advance.
+
+### Seek storm
+
+Tap → `SEEK idx` → server `seek()` bumps the doc epoch (stale jobs
+dropped, only the newest tap survives) → worker renders → `ready` →
+fetch → play. Last tap always wins; overlapping audio is impossible
+because the old source is detached before the new one starts.
+
+## Failure semantics (never silent)
+
+| Failure | Surface |
+|---|---|
+| Bot-check page | Overlay error card + Retry (re-runs extraction) |
+| Image-only chapter | "Scanned pages — OCR out of scope" |
+| Server unreachable | Named banner + Retry; 20 s fetch timeout |
+| Player dead | 10 s bound → "Player did not answer" → Retry recreates the doc |
+| Render gap | Bounded wait → named sentence error |
+| GPU down | `degraded` badge, Kokoro fallback, playback continues |
+| Settings change mid-play | Pause → re-manifest → resume at same sentence |
+
+## Verification
+
+- Extension: `pnpm typecheck`, 29 vitest, full Playwright E2E
+  (`proof/browser_e2e_pw.py`: mount → seek → title/nav → theme →
+  settings panel → playback auto-advance → challenge), zero page errors.
+- Stack: pytest suite (queue, render, textpipe, SSE ring, `/voices`,
+  pron, consent), live curl probes in `tts-stack/proof/`.

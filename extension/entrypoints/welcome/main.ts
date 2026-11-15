@@ -18,7 +18,7 @@ async function main(): Promise<void> {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   app.innerHTML = `
     <div class="card">
-      <h1>Welcome to InkCast</h1>
+      <h1>Welcome to InkTTS</h1>
       <ol>
         <li>Start the TTS stack on your LAN machine (<code>update.sh</code> prints the URL).</li>
         <li>Paste that URL below and Test connection.</li>

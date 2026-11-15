@@ -447,7 +447,7 @@ export default defineContentScript({
     // next chapter renders and plays without another press.
     try {
       const s = await loadSettings();
-      if (s.autoplayNext !== false) sessionStorage.setItem('inkcast.autoplay', '1');
+      if (s.autoplayNext !== false) sessionStorage.setItem('inktts.autoplay', '1');
     } catch { /* storage blocked: plain nav */ }
     if (url) location.href = url;
   }
@@ -467,8 +467,8 @@ export default defineContentScript({
 
   // Next-chapter autoplay: landed via goNext, open + play directly.
   try {
-    if (sessionStorage.getItem('inkcast.autoplay') === '1') {
-      sessionStorage.removeItem('inkcast.autoplay');
+    if (sessionStorage.getItem('inktts.autoplay') === '1') {
+      sessionStorage.removeItem('inktts.autoplay');
       setTimeout(() => {
         if (!teardown) openOverlay(true);
         else void startPlayback();
