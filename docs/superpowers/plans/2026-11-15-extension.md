@@ -123,3 +123,22 @@
 - [ ] **Step 1: Load unpacked extension**, set server URL, open NovelBuddy chapter, press play.
 - [ ] **Step 2: Verify** — highlight follows audio, tap sentence 10 while 1 renders → 10 plays fast, prefetch continues, immersive toggles, Esc restores page; end card offers next chapter; two-tab + kill-reconnect pass; save screenshot + console log to `extension/proof/`.
 - [ ] **Step 3: Commit proof** — `git commit -s -m "proof: NovelBuddy read-along end-to-end"`.
+
+### Task 7: Expert hardening (5-agent audit — implement all)
+
+Files (create): `entrypoints/shared/messaging.ts` (targeted envelope), `entrypoints/content/selftest.ts`, `welcome.html` + `entrypoints/welcome/main.ts`.
+Files (modify): `background.ts`, `offscreen/player.ts`, `offscreen/main.ts`, `content.ts`, `content/mount.ts`, `overlay.tsx`, `popup/main.ts`, `options/main.ts`, `content/extract.ts`, `tests/*`.
+Tests: vitest keeps LOGIC tests; style assertions move to in-browser self-test + screenshots.
+
+- [ ] Step 1 — Targeted messaging: add `target:'sw'|'offscreen'|'content'` to every message; receivers ignore non-targets, never re-emit. SW keeps ONLY ENSURE_OFFSCREEN + PLAY-to-tab + targeted relay; no SW-held queue/timers (alarms only).
+- [ ] Step 2 — Undegradable overlay CSS: `cssInjectionMode:'ui'` + `createShadowRootUi`, host on `document.documentElement`, ALL CSS in one bundled `<style>` string (px only, `:host` restore last, explicit font/color). Backdrop = solid rgba + blur enhancement. `?inkcast-selftest=1` asserts active styling/anchor; failure renders red STYLE MISSING banner. Screenshot per theme in E2E.
+- [ ] Step 3 — Immersive as mask: prev/current/next over the SAME list (not a separate view); 220ms transitions; wheel/touch pauses follow + "Follow" pill, 5s re-lock; arrows step, Enter seeks, Esc exits; `role=log aria-live=polite`, roving tabindex.
+- [ ] Step 4 — Karaoke component: gradient-mask word wipe via rAF; sentence-only sources degrade to line-sweep; 80ms visual minimum; never blank on gaps.
+- [ ] Step 5 — Player hardening: SSE `Last-Event-ID` resume + 45s heartbeat watchdog (exp-backoff reconnect) + resync-on-gap; `ctx.resume()` on every PLAY; pause>30s death = expected resume path; position write on every LINE_AT + pagehide.
+- [ ] Step 6 — Extraction upgrade: Readability `charThreshold:200, nbTopCandidates:10, linkDensityModifier:0.5, classesToPreserve:[ruby,rt,rp]`; Defuddle fallback #2; block-level promo decompose (incl. `<style>`-rule promos + author-note quarantine); MutationObserver settle-wait; soft-nav re-extract; rule JSON versioning + telemetry.
+- [ ] Step 7 — Settings contract: popup = transport + ONE server-URL editor + named-error Test + "All settings" link. Options = everything else via single `settings.ts` (defaults/load/migrate/onChanged echo), validation-first editors, per-section reset, Backup export/import. `welcome.html` on install + `isConfigured()` gate (setup state, never silent).
+- [ ] Step 8 — Verify: vitest + typecheck + build + full Playwright E2E green.
+- [ ] Step 9 — Commit: `git commit -s -m "feat: extension expert hardening"`.
+
+### Task 8: NovelPhoenix + Royal Road proof (second site class)
+- [ ] Repeat the website E2E on a NovelPhoenix chapter (different DOM) + Royal Road (clean baseline). Both green before extraction is done.
