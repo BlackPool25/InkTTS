@@ -10,7 +10,7 @@ services:
       args:
         RUNTIME: rocm
     image: inkcast-chatterbox:rocm
-    deploy: {} # drop the nvidia reservation
+    deploy: !reset {} # drop the nvidia reservation
     devices:
       - /dev/kfd
       - /dev/dri
