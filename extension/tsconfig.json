@@ -5,6 +5,8 @@
     "moduleResolution": "bundler",
     "strict": true,
     "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
     "types": ["chrome", "vite/client"]
   },
   "include": [".wxt/types/imports.d.ts", "entrypoints", "tests"]
