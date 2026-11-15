@@ -21,14 +21,15 @@
 
 Topics: `text-to-speech` · `tts` · `kokoro` · `chatterbox` · `gguf` · `read-along` · `chrome-extension` · `novel-reader` · `lan-server` · `vulkan`
 
-![Reader overlay](docs/assets/screenshots/overlay.png)
-![Playback with progress HUD](docs/assets/screenshots/overlay-playing.png)
+## Screenshots
+
+| Immersive reader | Playback with progress HUD |
+|---|---|
+| ![Immersive reader overlay](docs/assets/screenshots/overlay.png) | ![Playback with progress HUD](docs/assets/screenshots/overlay-playing.png) |
 
 | Popup transport | All settings |
 |---|---|
-| ![Popup](docs/assets/screenshots/popup.png) | ![Options](docs/assets/screenshots/options.png) |
-
-![In-reader settings: theme, speed](docs/assets/screenshots/overlay-settings.png)
+| ![Popup transport](docs/assets/screenshots/popup.png) | ![Settings page](docs/assets/screenshots/options.png) |
 
 ## Features
 
