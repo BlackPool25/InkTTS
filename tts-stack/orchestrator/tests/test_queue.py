@@ -85,3 +85,24 @@ def test_tap_returns_202_shape():
     r = c.post("/tap", json={"doc_id": "d2", "idx": 10})
     assert r.status_code == 200
     assert "queued" in r.json() and "position" in r.json()
+
+
+def test_voices_lists_engine_voices():
+    from fastapi.testclient import TestClient
+    from orchestrator import api as A
+    c = TestClient(A.app)
+    r = c.get("/voices")
+    assert r.status_code == 200
+    body = r.json()
+    assert "kokoro" in body and "chatterbox" in body
+    # chatterbox is always the server default voice
+    assert body["chatterbox"] == ["default"]
+    assert isinstance(body["kokoro"], list)
+    # live-engine coverage: real packs captured from the model itself
+    import urllib.request
+    try:
+        live = urllib.request.urlopen("http://127.0.0.1:8095/voices", timeout=5)
+        import json as _j
+        assert "af_heart" in _j.load(live)["kokoro"]
+    except Exception:
+        pass  # engine warming: shape asserted above

@@ -56,6 +56,30 @@ def emit(doc: str, typ: str, **data) -> None:
     rings[doc].append({"id": cursors[doc], "type": typ, "doc": doc, **data})
 
 
+@app.get("/voices")
+def voices():
+    """Voices captured from the model itself (never typed).
+    Kokoro: voice packs present on the engine. Chatterbox: server
+    default voice (per-request reference-audio is a future flow)."""
+    import urllib.request as _u
+    kokoro: list[str] = []
+    try:
+        eng = os.environ.get("KOKORO_URL", "http://kokoro:8880").rstrip("/")
+        with _u.urlopen(eng + "/v1/voices", timeout=5) as r:
+            data = json.load(r)
+        for v in data.get("voices", []):
+            name = v.get("name", "") if isinstance(v, dict) else str(v)
+            if name.startswith("kokoro-voice-"):
+                short = name[len("kokoro-voice-"):]
+                if short.endswith(".gguf"):
+                    short = short[:-5]
+                if short and short not in kokoro:
+                    kokoro.append(short)
+    except Exception:
+        pass  # engine warming: options UI falls back to the saved value
+    return {"kokoro": sorted(kokoro), "chatterbox": ["default"]}
+
+
 @app.get("/health")
 def health():
     try:

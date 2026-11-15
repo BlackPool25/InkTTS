@@ -11,6 +11,8 @@ h2 { font-size: 17px; margin: 28px 0 4px; }
 .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.09); border-radius: 12px; padding: 20px; margin: 14px 0; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 8px 32px rgba(0,0,0,0.45); }
 label { display: block; font-size: 13px; margin: 10px 0 4px; color: #c9c9d2; font-family: system-ui, sans-serif; }
 input[type=text], input[type=number], select, textarea { width: 100%; box-sizing: border-box; background: #1c1c22; color: #fff; border: 1px solid #33333d; border-radius: 8px; padding: 8px; font-family: system-ui, sans-serif; }
+input[type=range] { width: 100%; accent-color: #7c9cff; height: 32px; }
+#speedval { font-variant-numeric: tabular-nums; color: #fff; }
 input[type=checkbox] { width: 22px; height: 22px; accent-color: #7c9cff; vertical-align: middle; }
 .check { display: flex; gap: 10px; align-items: center; font-size: 14px; font-family: system-ui, sans-serif; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -42,16 +44,19 @@ async function main(): Promise<void> {
       <div class="row"><div><button id="testserver" class="ghost">Test connection</button></div><div><span id="srvstatus"></span></div></div>
     </div>
     <div class="card"><h2>Voice</h2>
-      <p class="sub">Global default. Override per site below.</p>
-      <div class="row">
-        <div><label>Voice<input id="voice" type="text" value="${esc(s.voice)}" /></div>
-        <div><label>Speed<input id="speed" type="number" step="0.1" min="0.5" max="2" value="${esc(s.speed)}" /></div>
-      </div>
+      <p class="sub">Global default, captured from the model — never typed. Override per site below.</p>
       <label>Model</label>
       <select id="model">
         <option value="kokoro"${s.model === 'kokoro' ? ' selected' : ''}>Kokoro — fast, CPU</option>
         <option value="chatterbox"${s.model === 'chatterbox' ? ' selected' : ''}>Chatterbox — expressive, GPU</option>
       </select>
+      <label>Voice</label>
+      <select id="voice">
+        <option value="${esc(s.voice)}" selected>${esc(s.voice)} (saved)</option>
+      </select>
+      <p class="sub" id="voicenote">Loading voices from the server…</p>
+      <label>Speed <span id="speedval">${esc(s.speed ?? 1)}</span>x</label>
+      <input id="speed" type="range" step="0.05" min="0.5" max="2.5" value="${esc(s.speed ?? 1)}" />
     </div>
     <div class="card"><h2>Reading</h2>
       <p class="sub">Theme, focus band width and autoplay.</p>
@@ -93,6 +98,60 @@ async function main(): Promise<void> {
     okEl.style.color = '#ff9d9d';
     okEl.textContent = line;
   }
+  // Voices captured from the model itself: list live, filtered by model.
+  // If the server is unreachable the saved value stays selectable.
+  const voiceSel = document.getElementById('voice') as HTMLSelectElement;
+  const modelSel = document.getElementById('model') as HTMLSelectElement;
+  const note = document.getElementById('voicenote')!;
+  async function refreshVoices(): Promise<void> {
+    const model = modelSel.value;
+    const keep = voiceSel.value || s.voice;
+    try {
+      const base = (document.getElementById('serverurl') as HTMLInputElement).value.trim().replace(/\/$/, '')
+        || s.serverUrl.replace(/\/$/, '');
+      if (!base) throw new Error('no server URL');
+      const r = await fetch(`${base}/voices`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json() as { kokoro?: string[]; chatterbox?: string[] };
+      const list = (model === 'kokoro' ? j.kokoro : j.chatterbox) ?? [];
+      voiceSel.innerHTML = '';
+      const names = list.length > 0 ? list : [keep || 'af_heart'];
+      for (const n of names) {
+        const o = document.createElement('option');
+        o.value = n;
+        o.textContent = n;
+        if (n === keep) o.selected = true;
+        voiceSel.appendChild(o);
+      }
+      if (!names.includes(keep) && keep) {
+        const o = document.createElement('option');
+        o.value = keep;
+        o.textContent = `${keep} (saved)`;
+        o.selected = true;
+        voiceSel.appendChild(o);
+      }
+      note.textContent = list.length > 0
+        ? `${list.length} voice${list.length === 1 ? '' : 's'} from the model.`
+        : 'Server unreachable — saved voice kept.';
+    } catch {
+      note.textContent = 'Server unreachable — saved voice kept.';
+      if (![...voiceSel.options].some((o) => o.value === keep)) {
+        const o = document.createElement('option');
+        o.value = keep;
+        o.textContent = `${keep} (saved)`;
+        o.selected = true;
+        voiceSel.appendChild(o);
+      }
+    }
+  }
+  modelSel.onchange = () => void refreshVoices();
+  void refreshVoices();
+  // Speed slider with live value.
+  const speedEl = document.getElementById('speed') as HTMLInputElement;
+  const speedVal = document.getElementById('speedval')!;
+  const paintSpeed = () => { speedVal.textContent = parseFloat(speedEl.value).toFixed(2); };
+  speedEl.oninput = paintSpeed;
+  paintSpeed();
   document.getElementById('save')!.onclick = async () => {
     // Validation-first: block save naming the offending line.
     let perSite: ServerSettings['perSite'] = {};
@@ -107,7 +166,7 @@ async function main(): Promise<void> {
       fail('Speed must be 0.5–2.5.');
       return;
     }
-    const voice = (document.getElementById('voice') as HTMLInputElement).value.trim();
+    const voice = (document.getElementById('voice') as HTMLSelectElement).value.trim();
     if (!/^[a-z0-9_+-]{1,64}$/i.test(voice || DEFAULT_SETTINGS.voice)) {
       fail('Voice has illegal characters.');
       return;
