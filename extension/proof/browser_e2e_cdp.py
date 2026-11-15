@@ -15,7 +15,11 @@ import urllib.request
 
 import websocket
 
-CHROME = "/usr/bin/google-chrome"
+import os
+
+CHROME = os.environ.get(
+    "E2E_CHROME",
+    "/usr/bin/google-chrome")  # Playwright's unbranded Chromium sideloads;
 EXT = "/home/shreyas/projects/InkCast/extension/.output/chrome-mv3"
 PROFILE = "/tmp/cdp-e2e-profile"
 PORT = 9333
@@ -98,7 +102,17 @@ def wait_for(pred, what, timeout=30):
     raise AssertionError(f"never appeared: {what}")
 
 
+def cleanup():
+    import subprocess as sp
+    # Kill only OUR test chromes (profile-scoped pattern; never self-matches:
+    # this python process cmdline contains the script name, not the pattern).
+    sp.run(["pkill", "-f", "user-data-dir=/tmp/cdp-e2e-prof" + "ile"],
+           capture_output=True)
+
+
 def main():
+    cleanup()
+    time.sleep(1)
     socketserver.TCPServer.allow_reuse_address = True
     srv = socketserver.TCPServer(("127.0.0.1", 0), Handler)
     port = srv.server_address[1]
@@ -117,18 +131,21 @@ def main():
     print("extension id:", eid[:8] + "…")
     sws = CDP(sw["webSocketDebuggerUrl"])
 
-    page = wait_for(lambda t: t["type"] == "page"
-                   and t["url"] == "about:blank", "blank page")
+    page = wait_for(lambda t: t["type"] == "page", "any page")
     cdp = CDP(page["webSocketDebuggerUrl"])
     cdp.call("Page.navigate", {"url": f"http://127.0.0.1:{port}/ch1.html"})
     time.sleep(2)
 
-    # Toggle the overlay the way the popup would.
-    sws.evaluate("""(async () => {
-      const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-      await chrome.tabs.sendMessage(tab.id, {type: 'TOGGLE_OVERLAY'});
-      return true;
-    })()""")
+    # Toggle the overlay the way the popup would (find tab by URL, not
+    # "active": fresh profiles often open extra tabs).
+    sws.evaluate(f"""(async () => {{
+      const tabs = await chrome.tabs.query({{currentWindow: true}});
+      const tab = tabs.find(t => (t.url || '').includes('127.0.0.1:{port}'))
+        || tabs.find(t => (t.url || '').startsWith('http'));
+      if (!tab) throw new Error('no fixture tab');
+      await chrome.tabs.sendMessage(tab.id, {{type: 'TOGGLE_OVERLAY'}});
+      return tab.url;
+    }})()""")
     time.sleep(1.5)
     host = cdp.evaluate("document.getElementById('inkcast-overlay-host') !== null")
     print("overlay mounted:", host)
@@ -160,11 +177,14 @@ def main():
 
     cdp.call("Page.navigate", {"url": f"http://127.0.0.1:{port}/blocked.html"})
     time.sleep(2)
-    sws.evaluate("""(async () => {
-      const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-      await chrome.tabs.sendMessage(tab.id, {type: 'TOGGLE_OVERLAY'});
-      return true;
-    })()""")
+    sws.evaluate(f"""(async () => {{
+      const tabs = await chrome.tabs.query({{currentWindow: true}});
+      const tab = tabs.find(t => (t.url || '').includes('127.0.0.1:{port}'))
+        || tabs.find(t => (t.url || '').startsWith('http'));
+      if (!tab) throw new Error('no fixture tab');
+      await chrome.tabs.sendMessage(tab.id, {{type: 'TOGGLE_OVERLAY'}});
+      return tab.url;
+    }})()""")
     time.sleep(1)
     err = cdp.evaluate(
         "document.getElementById('inkcast-overlay-host')"
@@ -172,6 +192,7 @@ def main():
     print("challenge overlay:", (err or "").strip()[:80])
     assert err and "bot check" in err, "challenge did not render loud error"
     print("BROWSER E2E DONE")
+    cleanup()
 
 
 main()

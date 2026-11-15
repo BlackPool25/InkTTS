@@ -51,7 +51,7 @@ export function rerenderOverlay(props: OverlayProps): void {
 const CSS = `
 .ink { position: fixed; inset: 0; z-index: 2147483647; display: flex; flex-direction: column;
   font-size: 16px; font-family: Georgia, 'Times New Roman', serif; }
-.ink-theme-dark { background: rgba(8,8,12,.97); color: #f2f2f5; }
+.ink-theme-dark { background: #08080c; color: #f2f2f5; }
 .ink-theme-ambient { background: radial-gradient(120% 100% at 50% 0%, #2b3a67 0%, #101018 60%, #08080c 100%); color: #f5f2ea; }
 .ink-theme-sepia { background: #f4ecd8; color: #3b2f1e; }
 .ink-theme-light { background: #ffffff; color: #1a1a1a; }

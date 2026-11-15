@@ -2,7 +2,7 @@ import { extractChapter } from './content/extract';
 import { mountOverlay, rerenderOverlay } from './content/mount';
 
 export default defineContentScript({
-  matches: ['https://*/*'],
+  matches: ['http://*/*', 'https://*/*'],
   runAt: 'document_idle',
   main() {
 
