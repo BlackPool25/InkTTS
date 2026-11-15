@@ -55,8 +55,17 @@ export class Player {
         st = await loadPlayState();
       } catch (e) { fail('state', e); return; }
       const settings = await loadSettings().catch(() => null);
-    this.rate = settings?.speed ?? 1.0;
-    let sentences: ServerSentence[] = paragraphs.map((text, idx) => ({ idx, text }));
+      this.rate = settings?.speed ?? 1.0;
+      // Per-site voice/model override: the stored map wins for this host.
+      let voice = settings?.voice;
+      let model = settings?.model;
+      try {
+        const host = new URL(docId).hostname;
+        const ov = (settings?.perSite as Record<string, { voice?: string; model?: string }> | undefined)?.[host];
+        if (ov?.voice) voice = ov.voice;
+        if (ov?.model === 'kokoro' || ov?.model === 'chatterbox') model = ov.model;
+      } catch { /* docId not a URL: global voice applies */ }
+      let sentences: ServerSentence[] = paragraphs.map((text, idx) => ({ idx, text }));
     const ctrl = new AbortController();
     const abortTimer = setTimeout(() => ctrl.abort(), 20000);
     try {
@@ -67,7 +76,8 @@ export class Player {
         body: JSON.stringify({
           doc_id: docId,
           sentences: paragraphs.map((text) => ({ text })),
-          voice: settings?.voice, speed: settings?.speed, model: settings?.model,
+          voice, speed: settings?.speed, model,
+          pron: settings?.pron ?? '',
         }),
       });
       if (!r.ok) throw new Error(`manifest HTTP ${r.status}`);

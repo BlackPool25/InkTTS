@@ -104,11 +104,11 @@ describe('overlay', () => {
     expect(html).toContain('Connect your TTS server');
   });
 
-  it('karaoke fill uses clip-path wipe', () => {
+  it('follow pill appears when follow pauses', () => {
     const html = renderToString(
-      <Overlay sentences={SENTS} activeIdx={0} karaoke wordFrac={0.5} />,
+      <Overlay sentences={SENTS} activeIdx={0} followPaused />,
     );
-    expect(html).toContain('karaoke-fill');
-    expect(html).toContain('clip-path');
+    expect(html).toContain('follow-pill');
+    expect(html).toContain('Follow');
   });
 });

@@ -17,6 +17,7 @@ from fastapi import FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
+from . import pron as _pron
 from .queue import Queue, PREFETCH_K
 
 from contextlib import asynccontextmanager
@@ -78,7 +79,12 @@ def manifest(body: dict):
     # the authoritative list. Overlay lines == audio files == LRC lines.
     paras = [s.get("text", "") if isinstance(s, dict) else str(s)
              for s in incoming]
-    sentences, problems = _tp.process_chapter(paras)
+    pron_text = str(body.get("pron", "") or "")
+    rules = _pron.rules_from_text(pron_text)
+    import hashlib as _hl
+    dict_ver = ("u" + _hl.sha1(pron_text.encode()).hexdigest()[:7]
+                if pron_text.strip() else "d1")
+    sentences, problems = _tp.process_chapter(paras, rules)
     for pr in problems:
         emit(doc, "skipped", para=(pr.get("para", "")[:60]),
              error_class=pr.get("error_class", ""))
@@ -87,7 +93,7 @@ def manifest(body: dict):
         "voice": body.get("voice", "af_heart"),
         "speed": float(body.get("speed", 1.0)),
         "model": body.get("model", "kokoro"),
-        "dict_ver": body.get("dict_ver", "d1"),
+        "dict_ver": dict_ver,
         "tag": body.get("engine_tag", "kokoro-v0.10.0"),
     }
     for s in sentences:

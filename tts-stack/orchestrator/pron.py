@@ -49,6 +49,24 @@ def parse_yaml(text: str) -> list[tuple[str, str]]:
     return out
 
 
+def rules_from_text(text: str) -> list[PronRule]:
+    """Build rules from UI text: `pattern => say-as` lines (or `pattern: say-as`)."""
+    conv: list[str] = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=>" in line:
+            pat, rep = line.split("=>", 1)
+            conv.append(f"{pat.strip()}: {rep.strip()}")
+        else:
+            conv.append(line)
+    pairs = parse_yaml("\n".join(conv))
+    pairs.sort(key=lambda p: len(p[0]), reverse=True)  # longest-first
+    return [PronRule(p, r, re.compile(r"\b" + re.escape(p) + r"\b"))
+            for p, r in pairs]
+
+
 def load_rules(path: str = "pron_dict.yaml") -> list[PronRule]:
     try:
         with open(path, encoding="utf-8") as f:

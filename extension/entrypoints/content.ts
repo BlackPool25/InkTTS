@@ -11,7 +11,6 @@ export default defineContentScript({
   let sentences: string[] = [];
   let active = 0;
   // Immersive-only reader: no separate non-immersive mode exists anymore.
-  let karaoke = false;
   let setupNeeded = false;
   let degraded = false;
   let loading: false | 'boot' | 'manifest' = false;
@@ -57,7 +56,6 @@ export default defineContentScript({
       activeIdx: active,
       chapterTitle,
       novelTitle,
-      karaoke,
       theme,
       degraded,
       loading: loading !== false,
@@ -88,13 +86,6 @@ export default defineContentScript({
       },
       onNextChapter: () => void goTo(nextUrl),
       onPrevChapter: () => void goTo(prevUrl),
-      onToggleKaraoke: () => {
-        karaoke = !karaoke;
-        rerenderOverlay(currentProps());
-        void loadSettings()
-          .then((s) => saveSettings({ ...s, karaoke }))
-          .catch(() => undefined);
-      },
       onCycleTheme: () => {
         theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
         rerenderOverlay(currentProps());
@@ -102,14 +93,10 @@ export default defineContentScript({
           .then((s) => saveSettings({ ...s, theme }))
           .catch(() => undefined);
       },
-      onSettingsChange: (patch: { theme?: string; karaoke?: boolean; speed?: number }) => {
+      onSettingsChange: (patch: { theme?: string; speed?: number }) => {
         let changed = false;
         if (patch.theme && (THEMES as readonly string[]).includes(patch.theme)) {
           theme = patch.theme as typeof theme;
-          changed = true;
-        }
-        if (typeof patch.karaoke === 'boolean') {
-          karaoke = patch.karaoke;
           changed = true;
         }
         if (typeof patch.speed === 'number' && patch.speed >= 0.8 && patch.speed <= 2.5) {
@@ -122,7 +109,6 @@ export default defineContentScript({
           .then((s) => saveSettings({
             ...s,
             ...(patch.theme ? { theme: patch.theme } : {}),
-            ...(typeof patch.karaoke === 'boolean' ? { karaoke: patch.karaoke } : {}),
             ...(typeof patch.speed === 'number' ? { speed: patch.speed } : {}),
           }))
           .catch(() => undefined);
@@ -130,6 +116,12 @@ export default defineContentScript({
       onResumeFollow: () => {
         followPaused = false;
         rerenderOverlay(currentProps());
+      },
+      onPauseFollow: () => {
+        if (!followPaused) {
+          followPaused = true;
+          rerenderOverlay(currentProps());
+        }
       },
       onPause: () => {
         playing = false;
@@ -373,7 +365,6 @@ export default defineContentScript({
       if (s.siteRules) setRuleOverrides(s.siteRules);
       let changed = false;
       if (s.theme) { theme = s.theme as typeof theme; changed = true; }
-      if (s.karaoke !== undefined) { karaoke = !!s.karaoke; changed = true; }
       if (typeof s.speed === 'number' && s.speed >= 0.8 && s.speed <= 2.5) {
         rate = s.speed;
         chrome.runtime.sendMessage({ target: 'offscreen', type: 'SET_RATE', payload: { rate } });

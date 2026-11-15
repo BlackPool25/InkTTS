@@ -180,7 +180,7 @@ def main():
         page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/overlay.png")
         print("screenshot saved: proof/overlay.png")
 
-        # Modes: immersive-only (always on) + title header; theme cycle; karaoke fill.
+        # Modes: immersive-only (always on) + title header; theme cycle; settings panel.
         click = """(text) => {
           const h = document.getElementById('inkcast-overlay-host');
           const btns = [...h.shadowRoot.querySelectorAll('button')];
@@ -222,16 +222,16 @@ def main():
         print("theme class:", cls)
         assert "ink-theme-ambient" in cls, "theme did not cycle to ambient"
         t0 = time.monotonic()
-        page.evaluate(f"({click})('Aa')")
-        fill = wait_until(
+        page.evaluate(f"({click})('Settings')")
+        panel = wait_until(
             lambda: page.evaluate(
                 "() => !!document.getElementById('inkcast-overlay-host')"
-                ".shadowRoot.querySelector('.ink-fill')"),
+                ".shadowRoot.querySelector('[data-testid=settings-panel]')"),
             timeout=5)
-        mark("karaoke", t0)
-        print("karaoke fill element:", fill)
-        assert fill, "karaoke fill element missing"
-        page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/overlay-karaoke.png")
+        mark("panel", t0)
+        print("settings panel:", panel)
+        assert panel, "in-overlay settings panel missing"
+        page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/overlay-settings.png")
 
         # Settings pages render (popup + options) — layout proof. Runs on a
         # 2nd page BEFORE playback: the background routes player->page

@@ -54,14 +54,13 @@ async function main(): Promise<void> {
       </select>
     </div>
     <div class="card"><h2>Reading</h2>
-      <p class="sub">Theme, karaoke word-fill, focus span and immersive default.</p>
+      <p class="sub">Theme, focus band width and autoplay.</p>
       <label>Theme</label>
       <div class="swatches" id="themes">${THEMES.map((t) => `<button class="sw-${t}" data-t="${t}" title="${t}" aria-pressed="${s.theme === t}"></button>`).join('')}</div>
       <div class="row">
-        <div><label class="check">Karaoke word fill <input id="karaoke" type="checkbox"${s.karaoke ? ' checked' : ''} /></label></div>
         <div><label>Focus span<select id="focus">${[1, 3, 5].map((n) => `<option${(s.focus ?? 3) === n ? ' selected' : ''}>${n}</option>`).join('')}</select></label></div>
+        <div><label class="check">Autoplay next chapter <input id="autoplay" type="checkbox"${s.autoplayNext !== false ? ' checked' : ''} /></label></div>
       </div>
-      <label class="check">Autoplay next chapter <input id="autoplay" type="checkbox"${s.autoplayNext !== false ? ' checked' : ''} /></label>
     </div>
     <div class="card"><h2>Per-site overrides</h2>
       <p class="sub">Domain → voice/model JSON. Used when a site needs a different voice.</p>
@@ -121,7 +120,6 @@ async function main(): Promise<void> {
       perSite,
       theme, pron: (document.getElementById('pron') as HTMLTextAreaElement).value,
       siteRules: (document.getElementById('rules') as HTMLTextAreaElement).value,
-      karaoke: (document.getElementById('karaoke') as HTMLInputElement).checked,
       focus: parseInt((document.getElementById('focus') as HTMLSelectElement).value, 10),
       immersiveDefault: true, // immersive-only reader; kept for back-compat
       autoplayNext: (document.getElementById('autoplay') as HTMLInputElement).checked,

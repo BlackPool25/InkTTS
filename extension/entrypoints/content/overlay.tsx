@@ -14,10 +14,8 @@ export type ExtractError = 'empty' | 'boilerplate' | 'challenge' | 'image-only';
 export interface OverlayProps {
   sentences: string[];
   activeIdx: number;
-  wordFrac?: number; // 0..1 fill within the active sentence
   chapterTitle?: string;
   novelTitle?: string | null;
-  karaoke?: boolean;
   theme?: Theme;
   focusSpan?: 1 | 3 | 5;
   error?: { code: ExtractError; detail: string } | null;
@@ -38,17 +36,17 @@ export interface OverlayProps {
   onNext?: () => void;
   onPrevChapter?: () => void;
   onNextChapter?: () => void;
-  onToggleKaraoke?: () => void;
   onCycleTheme?: () => void;
   onTheme?: (t: Theme) => void;
   onResumeFollow?: () => void;
+  onPauseFollow?: () => void;
   onPause?: () => void;
   onPlay?: () => void;
   onPrev?: () => void;
   onNextSentence?: () => void;
   rate?: number;
   onCycleSpeed?: () => void;
-  onSettingsChange?: (patch: { theme?: string; karaoke?: boolean; speed?: number }) => void;
+  onSettingsChange?: (patch: { theme?: string; speed?: number }) => void;
 }
 
 export const ERROR_COPY: Record<ExtractError, { title: string; body: string }> = {
@@ -68,8 +66,9 @@ export function visibleRange(active: number, total: number, immersive: boolean, 
   return [Math.max(0, active - half - 4), Math.min(total, active + half + 5)];
 }
 
-/** Karaoke wipe: gradient-mask fill driven by rAF word timings.
- * Sentence-only sources (no word tags) degrade to line-sweep. */
+/** Karaoke wipe (future): gradient-mask fill driven by rAF word timings
+ * once the server ships word tags. Currently unwired — no dead UI
+ * references it. */
 export function KaraokeFill({ frac }: { frac: number }) {
   const pct = Math.round(Math.min(1, Math.max(0, frac)) * 100);
   return (
@@ -159,8 +158,9 @@ export function Overlay(p: OverlayProps) {
         ) : null}
         <button onClick={p.onPrev} aria-label="Previous sentence" disabled={p.phase !== 'playing' && p.phase !== 'paused'}>|&#9664;</button>
         <button onClick={p.onNextSentence} aria-label="Next sentence" disabled={p.phase !== 'playing' && p.phase !== 'paused'}>&#9654;|</button>
+        <button onClick={p.onPrevChapter} aria-label="Previous chapter" title="Previous chapter" disabled={!p.prevUrl}>&#171;</button>
+        <button onClick={p.onNextChapter} aria-label="Next chapter" title="Next chapter" disabled={!p.nextUrl}>&#187;</button>
         <button onClick={p.onCycleSpeed} aria-label="Playback speed" title="Playback speed" disabled={p.phase !== 'playing' && p.phase !== 'paused'}>{(p.rate ?? 1).toFixed(2).replace(/0$/, '')}x</button>
-        <button onClick={p.onToggleKaraoke} aria-pressed={!!p.karaoke} title="Karaoke word fill">Aa</button>
         <button onClick={p.onCycleTheme} title="Theme">Theme</button>
         <button onClick={() => setPanelOpen((v) => !v)} aria-pressed={panelOpen} title="Reading settings">Settings</button>
         <button onClick={p.onExit}>Close (Esc)</button>
@@ -194,12 +194,6 @@ export function Overlay(p: OverlayProps) {
               ))}
             </div>
           </div>
-          <div className="ink-panel-row">
-            <span>Karaoke</span>
-            <button aria-pressed={!!p.karaoke} onClick={() => p.onSettingsChange?.({ karaoke: !p.karaoke })}>
-              {p.karaoke ? 'On' : 'Off'}
-            </button>
-          </div>
         </div>
       )}
       <div className="ink-hud" data-testid="chapter-progress" title="Chapter progress">
@@ -215,7 +209,9 @@ export function Overlay(p: OverlayProps) {
         className="ink-scroll"
         ref={scroller}
         onWheel={() => {
-          // User takes the wheel: pause follow, show the Follow pill.
+          // User takes the wheel: pause follow now, show the Follow pill,
+          // auto re-lock after 5s of no scrolling.
+          p.onPauseFollow?.();
           if (followTimer.current) clearTimeout(followTimer.current);
           followTimer.current = setTimeout(() => {
             // Auto re-lock after 5s of no scrolling.
@@ -251,7 +247,6 @@ export function Overlay(p: OverlayProps) {
               onClick={() => p.onSeek?.(idx)}
             >
               <span className="ink-text">{s}</span>
-              {active && p.karaoke && <KaraokeFill frac={p.wordFrac ?? 0} />}
             </div>
           );
         })}

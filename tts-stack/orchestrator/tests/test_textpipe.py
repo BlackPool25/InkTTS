@@ -87,3 +87,28 @@ def test_lrc_kokoro_and_chatterbox():
     ]
     lrc = build_lrc(entries)
     assert "<0.00>Hello" in lrc and "[00:00.80]Plain line." in lrc
+
+
+def test_rules_from_text_arrow_format():
+    from orchestrator.pron import rules_from_text, apply
+    rules = rules_from_text("FBI => F B I\n# comment\nUlrich: Ulrich")
+    assert len(rules) == 2
+    assert apply("FBI agent Ulrich", rules) == "F B I agent Ulrich"
+
+
+def test_manifest_accepts_pron_and_versions_cache_key():
+    from fastapi.testclient import TestClient
+    from orchestrator import api as A
+    c = TestClient(A.app)
+    r = c.post("/manifest", json={"doc_id": "d-pron",
+                                  "sentences": [{"text": "FBI agent walked slowly."}],
+                                  "pron": "FBI => F B I"})
+    assert r.status_code == 200
+    man = r.json()
+    assert man["accepted"] >= 1
+    from orchestrator import server as S
+    assert S.DOC_META["d-pron"]["dict_ver"].startswith("u")
+    r2 = c.post("/manifest", json={"doc_id": "d-nopron",
+                                   "sentences": [{"text": "FBI agent walked slowly."}]})
+    assert S.DOC_META["d-nopron"]["dict_ver"] == "d1"
+    assert S.DOC_META["d-pron"]["dict_ver"] != "d1"
