@@ -58,7 +58,7 @@ export const DEFAULT_SETTINGS: ServerSettings = {
   karaoke: false,
   focus: 3,
   immersiveDefault: false,
-  autoplayNext: false,
+  autoplayNext: true,
 };
 
 const EPHEMERAL_KEY = 'inktts.playstate';
@@ -109,4 +109,42 @@ export async function loadPlayState(): Promise<PlayState | null> {
   } catch {
     return null;
   }
+}
+
+const HANDOFF_KEY = 'inktts.chapter-handoff';
+const HANDOFF_TTL_MS = 120_000;
+
+function handoffArea(): chrome.storage.StorageArea | undefined {
+  try {
+    return chrome.storage?.session ?? chrome.storage?.local;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Inbuilt prev/next nav leaves a handoff so the new chapter re-opens the reader. */
+export async function setChapterHandoff(): Promise<void> {
+  try {
+    await handoffArea()?.set({ [HANDOFF_KEY]: Date.now() });
+  } catch { /* best-effort */ }
+  try {
+    sessionStorage.setItem('inktts.autoplay', '1');
+  } catch { /* storage blocked: extension-store copy suffices */ }
+}
+
+/** True when we just landed via the reader's own prev/next buttons. Consumes the flag. */
+export async function consumeChapterHandoff(): Promise<boolean> {
+  let fresh = false;
+  try {
+    const area = handoffArea();
+    const s = await area?.get(HANDOFF_KEY);
+    const at = s?.[HANDOFF_KEY] as unknown;
+    if (typeof at === 'number' && Date.now() - at < HANDOFF_TTL_MS) fresh = true;
+    await area?.remove(HANDOFF_KEY);
+  } catch { /* fall through to sessionStorage copy */ }
+  try {
+    if (sessionStorage.getItem('inktts.autoplay') === '1') fresh = true;
+    sessionStorage.removeItem('inktts.autoplay');
+  } catch { /* ignore */ }
+  return fresh;
 }

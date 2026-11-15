@@ -1,6 +1,6 @@
 import { extractChapter, setRuleOverrides } from './content/extract';
 import { mountOverlay, rerenderOverlay } from './content/mount';
-import { loadSettings, saveSettings } from './shared/messaging';
+import { consumeChapterHandoff, loadSettings, saveSettings, setChapterHandoff } from './shared/messaging';
 
 export default defineContentScript({
   matches: ['http://*/*', 'https://*/*'],
@@ -443,12 +443,10 @@ export default defineContentScript({
   }
 
   async function goTo(url: string | null): Promise<void> {
-    // Continuous reading: carry autoplay across the navigation so the
-    // next chapter renders and plays without another press.
-    try {
-      const s = await loadSettings();
-      if (s.autoplayNext !== false) sessionStorage.setItem('inktts.autoplay', '1');
-    } catch { /* storage blocked: plain nav */ }
+    // Continuous reading: the reader's own prev/next always carries the
+    // immersive overlay to the new chapter (extension store survives the
+    // navigation; sessionStorage alone does not, so set both).
+    await setChapterHandoff().catch(() => undefined);
     if (url) location.href = url;
   }
 
@@ -465,16 +463,19 @@ export default defineContentScript({
   }, 1000);
   void navTimer;
 
-  // Next-chapter autoplay: landed via goNext, open + play directly.
-  try {
-    if (sessionStorage.getItem('inktts.autoplay') === '1') {
-      sessionStorage.removeItem('inktts.autoplay');
-      setTimeout(() => {
-        if (!teardown) openOverlay(true);
-        else void startPlayback();
-      }, 800);
-    }
-  } catch { /* storage blocked: manual play */ }
+  // Next-chapter handoff: landed via the reader's own prev/next, so
+  // re-open the immersive overlay here too. The autoplay checkbox gates
+  // audio only — the overlay itself always follows the inbuilt nav.
+  void (async () => {
+    const handoff = await consumeChapterHandoff().catch(() => false);
+    if (!handoff) return;
+    const s = await loadSettings().catch(() => null);
+    const autoplay = s ? s.autoplayNext !== false : true;
+    setTimeout(() => {
+      if (!teardown) openOverlay(autoplay);
+      else if (autoplay) void startPlayback();
+    }, 800);
+  })();
 
   // Challenge cleared (user solved the checkbox): auto re-extract once.
   const obs = new MutationObserver(() => {
