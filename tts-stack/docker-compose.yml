@@ -41,6 +41,7 @@ services:
     container_name: inkcast-chatterbox
     restart: unless-stopped
     command: ["--backend", "chatterbox", "-m", "auto",
+              "--voice-dir", "/data/.cache/crispasr",
               "--host", "0.0.0.0", "--port", "8004"]
     environment:
       CRISPASR_CHATTERBOX_FORCE_GPU: "1"

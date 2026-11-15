@@ -142,3 +142,14 @@ Tests: vitest keeps LOGIC tests; style assertions move to in-browser self-test +
 
 ### Task 8: NovelPhoenix + Royal Road proof (second site class)
 - [ ] Repeat the website E2E on a NovelPhoenix chapter (different DOM) + Royal Road (clean baseline). Both green before extraction is done.
+
+### Task 9: User-driven hardening (done, committed)
+- [x] BOOT retry-until-ack (3 tries, recreate doc on 2nd) + 10s bounded wait with stage blame; pendingSeek across manifest; seek sets playing when booted.
+- [x] Gap-retry generation guard (pause/seek never error); onended identity check (stop() must not advance); resume offset persisted; setRate rebases clock.
+- [x] Layered title/nav (rule -> rel=/og:/hooks -> scored scan -> validated-or-nothing) + user rule overrides wired; immersive-only; in-overlay settings panel; GET_STATE popup mirror; chapter prev/next + endcard handoff (4s, cancellable); pixel HP bar; /voices dropdown + speed slider.
+- [x] Proof: browser E2E green incl. playback auto-advance; 29 vitest green.
+
+### Task 10: Next (pending)
+- [ ] NovelPhoenix + Royal Road proof (Task 8 repeat on real sites).
+- [ ] Word timings (Kokoro LRC -> karaoke fill) — needs server word-tag fanout.
+- [ ] Upload-your-own Chatterbox reference voice (POST /v1/voices UI in options).

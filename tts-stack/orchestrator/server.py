@@ -73,7 +73,8 @@ def render_job(job: dict) -> None:
         r = _render.render_sentence(
             sent["text"], m.get("voice", "af_heart"),
             m.get("speed", 1.0), m.get("model", "kokoro"), doc,
-            breaker, KOKORO_URL, CHATTERBOX_URL)
+            breaker, KOKORO_URL, CHATTERBOX_URL,
+            consent=m.get("consent") or None)
         CACHE.pinned.add(key)
         CACHE.store(key, r["audio"], r.get("dur_ms", 0),
                     {"voice": m.get("voice", ""), "speed": m.get("speed", ""),

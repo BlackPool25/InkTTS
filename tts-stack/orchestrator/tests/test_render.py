@@ -98,3 +98,43 @@ def test_voice_mapping_kokoro_filename_chatterbox_omitted():
     render_sentence("Hi.", "emily", 1.0, "chatterbox", "d",
                     Breaker(), "http://k", "http://c", post=post)
     assert "voice" not in seen
+
+
+def test_render_attaches_consent_for_chatterbox_voice():
+    from orchestrator import render as R
+    seen: dict = {}
+
+    def fake_post(url, payload, timeout=30):
+        import json as _j
+        seen.update(_j.loads(payload))
+        return b"FAKEAUDIO"
+
+    b = R.Breaker()
+    out = R.render_sentence("Hello world test.", "Connor", 1.0, "chatterbox",
+                            "d", b, "http://kokoro:8880", "http://chatterbox:8004",
+                            post=fake_post,
+                            consent="Operator accepts responsibility (test).")
+    assert out["audio"] == b"FAKEAUDIO"
+    assert seen.get("voice") == "Connor"
+    assert "consent_attestation" in seen
+
+
+def test_render_no_consent_for_kokoro_or_default():
+    from orchestrator import render as R
+    seen: dict = {}
+
+    def fake_post(url, payload, timeout=30):
+        import json as _j
+        seen.update(_j.loads(payload))
+        return b"FAKEAUDIO"
+
+    b = R.Breaker()
+    R.render_sentence("Hello world test.", "af_heart", 1.0, "kokoro",
+                      "d", b, "http://kokoro:8880", "http://chatterbox:8004",
+                      post=fake_post, consent="X")
+    assert "consent_attestation" not in seen
+    seen.clear()
+    R.render_sentence("Hello world test.", "default", 1.0, "chatterbox",
+                      "d", b, "http://kokoro:8880", "http://chatterbox:8004",
+                      post=fake_post, consent="X")
+    assert seen.get("voice", None) is None

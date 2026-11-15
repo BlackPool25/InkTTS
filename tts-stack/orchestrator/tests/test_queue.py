@@ -98,6 +98,8 @@ def test_voices_lists_engine_voices():
     # chatterbox is always the server default voice
     assert body["chatterbox"] == ["default"]
     assert isinstance(body["kokoro"], list)
+    assert "af_heart" in body["kokoro"] and "bm_george" in body["kokoro"]
+    assert len(body["kokoro"]) >= 20  # full roster, not just cached packs
     # live-engine coverage: real packs captured from the model itself
     import urllib.request
     try:

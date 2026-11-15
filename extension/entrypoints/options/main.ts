@@ -55,6 +55,7 @@ async function main(): Promise<void> {
         <option value="${esc(s.voice)}" selected>${esc(s.voice)} (saved)</option>
       </select>
       <p class="sub" id="voicenote">Loading voices from the server…</p>
+      <label class="check" id="consentrow" style="display:none">I accept responsibility for using non-default voices <input id="consent" type="checkbox" /></label>
       <label>Speed <span id="speedval">${esc(s.speed ?? 1)}</span>x</label>
       <input id="speed" type="range" step="0.05" min="0.5" max="2.5" value="${esc(s.speed ?? 1)}" />
     </div>
@@ -144,8 +145,16 @@ async function main(): Promise<void> {
       }
     }
   }
-  modelSel.onchange = () => void refreshVoices();
-  void refreshVoices();
+  const consentRow = document.getElementById('consentrow')!;
+  const consentEl = document.getElementById('consent') as HTMLInputElement;
+  try { consentEl.checked = !!s.voiceConsent; } catch { /* ignore */ }
+  function paintConsent(): void {
+    const need = modelSel.value === 'chatterbox' && voiceSel.value !== 'default';
+    consentRow.style.display = need ? '' : 'none';
+  }
+  modelSel.onchange = () => { void refreshVoices().then(paintConsent); };
+  voiceSel.onchange = paintConsent;
+  void refreshVoices().then(paintConsent);
   // Speed slider with live value.
   const speedEl = document.getElementById('speed') as HTMLInputElement;
   const speedVal = document.getElementById('speedval')!;
@@ -171,11 +180,18 @@ async function main(): Promise<void> {
       fail('Voice has illegal characters.');
       return;
     }
+    const model = (document.getElementById('model') as HTMLSelectElement).value as ServerSettings['model'];
+    const voiceConsent = (document.getElementById('consent') as HTMLInputElement).checked;
+    if (model === 'chatterbox' && voice !== 'default' && !voiceConsent) {
+      fail('Non-default Chatterbox voices need the responsibility checkbox ticked.');
+      return;
+    }
     const next: ServerSettings = {
       ...s,
       voice: voice || DEFAULT_SETTINGS.voice,
       speed,
-      model: (document.getElementById('model') as HTMLSelectElement).value as ServerSettings['model'],
+      model,
+      voiceConsent,
       perSite,
       theme, pron: (document.getElementById('pron') as HTMLTextAreaElement).value,
       siteRules: (document.getElementById('rules') as HTMLTextAreaElement).value,

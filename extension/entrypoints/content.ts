@@ -16,6 +16,11 @@ export default defineContentScript({
   let loading: false | 'boot' | 'manifest' = false;
   let playing = false;
   let bootTimer: ReturnType<typeof setTimeout> | null = null;
+  let ackTimer: ReturnType<typeof setTimeout> | null = null;
+  let bootAttempts = 0;
+  let acked = false;
+  let pendingSeek: number | null = null;
+  let lastBoot: { docId: string; paragraphs: string[]; serverUrl: string; startIdx: number } | null = null;
   let recreateNext = false;
   let hasBooted = false;
   let focusSpan: 1 | 3 | 5 = 3;
@@ -74,6 +79,12 @@ export default defineContentScript({
         cancelAutoNext();
         complete = false;
         active = idx;
+        if (hasBooted) {
+          // Player alive: a tap means listen from here.
+          playing = true;
+          audioError = null;
+        }
+        if (loading !== false) pendingSeek = idx; // manifest in flight: apply on landing
         rerenderOverlay(currentProps());
         chrome.runtime.sendMessage({ target: 'offscreen', type: 'SEEK', payload: { idx } });
       },
@@ -136,6 +147,10 @@ export default defineContentScript({
         complete = false;
         const idx = Math.max(0, active - 1);
         active = idx;
+        if (hasBooted) {
+          playing = true;
+          audioError = null;
+        }
         rerenderOverlay(currentProps());
         chrome.runtime.sendMessage({ target: 'offscreen', type: 'SEEK', payload: { idx } });
       },
@@ -145,6 +160,10 @@ export default defineContentScript({
         complete = false;
         const idx = Math.min(sentences.length - 1, active + 1);
         active = idx;
+        if (hasBooted) {
+          playing = true;
+          audioError = null;
+        }
         rerenderOverlay(currentProps());
         chrome.runtime.sendMessage({ target: 'offscreen', type: 'SEEK', payload: { idx } });
       },
@@ -195,8 +214,17 @@ export default defineContentScript({
     loading = 'boot';
     playing = true;
     audioError = null;
+    bootAttempts = 1;
+    acked = false;
+    lastBoot = {
+      docId: location.href,
+      paragraphs: sentences,
+      serverUrl: base,
+      startIdx: fromIdx ?? active,
+    };
     rerenderOverlay(currentProps());
     if (bootTimer) clearTimeout(bootTimer);
+    if (ackTimer) clearTimeout(ackTimer);
     bootTimer = setTimeout(() => {
       // Bounded wait. Stage says which half is silent.
       if (loading !== false) {
@@ -213,16 +241,39 @@ export default defineContentScript({
         rerenderOverlay(currentProps());
       }
     }, 10000);
+    sendBoot();
+    scheduleAckCheck();
+  }
+
+  function sendBoot(): void {
+    if (!lastBoot) return;
     chrome.runtime.sendMessage({
       target: 'offscreen',
       type: 'BOOT',
-      payload: {
-        docId: location.href,
-        paragraphs: sentences,
-        serverUrl: base,
-        startIdx: fromIdx ?? active,
-      },
+      payload: lastBoot,
     });
+  }
+
+  function scheduleAckCheck(): void {
+    // First BOOT can land in a not-yet-ready audio doc and vanish
+    // silently. Retry (recreating the doc on the 2nd try) until the
+    // player acks — no user action needed.
+    if (ackTimer) clearTimeout(ackTimer);
+    ackTimer = setTimeout(() => {
+      if (acked || loading === false || !lastBoot) return;
+      if (bootAttempts >= 3) return; // 10s timer delivers the verdict
+      bootAttempts += 1;
+      if (bootAttempts === 2) {
+        chrome.runtime.sendMessage({ target: 'sw', type: 'RECREATE_OFFSCREEN' });
+        setTimeout(() => {
+          sendBoot();
+          scheduleAckCheck();
+        }, 400);
+        return;
+      }
+      sendBoot();
+      scheduleAckCheck();
+    }, 2000);
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, respond) => {
@@ -243,6 +294,8 @@ export default defineContentScript({
     switch (msg.type) {      case 'BOOT_ACK':
         // Listener alive; manifest still pending. Promote the stage so a
         // later timeout blames the server fetch, not the player.
+        acked = true;
+        if (ackTimer) { clearTimeout(ackTimer); ackTimer = null; }
         if (loading !== false) {
           loading = 'manifest';
           rerenderOverlay(currentProps());
@@ -250,17 +303,26 @@ export default defineContentScript({
         return;
       case 'MANIFEST_OK': {
         if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+        if (ackTimer) { clearTimeout(ackTimer); ackTimer = null; }
         const list = (msg.payload as { sentences?: unknown })?.sentences;
         if (Array.isArray(list) && list.every((t) => typeof t === 'string')) {
           sentences = list as string[];
           active = 0;
           if (loading !== false) loading = 'manifest';
+          // A tap that landed mid-manifest: honor it now that lines exist.
+          if (pendingSeek !== null) {
+            const ps = Math.max(0, Math.min(sentences.length - 1, pendingSeek));
+            pendingSeek = null;
+            active = ps;
+            chrome.runtime.sendMessage({ target: 'offscreen', type: 'SEEK', payload: { idx: ps } });
+          }
           rerenderOverlay(currentProps());
         }
         return;
       }
       case 'LINE_AT': {
         if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+        if (ackTimer) { clearTimeout(ackTimer); ackTimer = null; }
         const idx = (msg.payload as { idx?: unknown })?.idx;
         if (typeof idx === 'number') {
           active = idx;
@@ -272,6 +334,7 @@ export default defineContentScript({
       }
       case 'AUDIO_ERROR': {
         if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+        if (ackTimer) { clearTimeout(ackTimer); ackTimer = null; }
         loading = false;
         playing = false;
         const pl = (msg.payload ?? {}) as { reason?: string; status?: number; hint?: string };

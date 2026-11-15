@@ -66,13 +66,14 @@ def _voice_for(model: str, voice: str) -> str | None:
         if v.endswith(".gguf"):
             return v
         return f"kokoro-voice-{v}.gguf"
-    return None
+    v = (voice or "default").strip() or "default"
+    return None if v == "default" else v
 
 
 def render_sentence(text: str, voice: str, speed: float, model: str,
                     doc: str, breaker: Breaker,
                     kokoro_url: str, chatterbox_url: str,
-                    post=_post) -> dict:
+                    post=_post, consent: str | None = None) -> dict:
     """Returns {audio: bytes, dur_ms, words|None, degraded, synthetic}."""
     import json
     if not text.strip() or len(text) > POISON_CHARS:
@@ -84,6 +85,8 @@ def render_sentence(text: str, voice: str, speed: float, model: str,
             "speed": speed, "response_format": "opus"}
     if req_voice is not None:
         body["voice"] = req_voice
+    if use_chatter and req_voice and consent:
+        body["consent_attestation"] = consent
     payload = json.dumps(body).encode()
     try:
         raw = post(engine_url + "/v1/audio/speech", payload)

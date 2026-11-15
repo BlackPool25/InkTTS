@@ -56,13 +56,28 @@ def emit(doc: str, typ: str, **data) -> None:
     rings[doc].append({"id": cursors[doc], "type": typ, "doc": doc, **data})
 
 
+# Full standard Kokoro roster: the engine resolves any voice pack on
+# demand (proven live: bella/george/lily/adam render in <1s on first
+# use, then persist in the crisp-models volume). `cached` = already
+# on disk (instant); the rest download once (~0.5MB each).
+KOKORO_ROSTER = [
+    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica",
+    "af_kore", "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+    "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael",
+    "am_onyx", "am_santa",
+    "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+    "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+]
+
+
 @app.get("/voices")
 def voices():
     """Voices captured from the model itself (never typed).
-    Kokoro: voice packs present on the engine. Chatterbox: server
-    default voice (per-request reference-audio is a future flow)."""
+    Chatterbox: server default voice (per-request reference-audio
+    is a future flow). Models stay resident: the engine has no
+    idle-unload (kokoro ~150MB, chatterbox pinned on GPU)."""
     import urllib.request as _u
-    kokoro: list[str] = []
+    cached: list[str] = []
     try:
         eng = os.environ.get("KOKORO_URL", "http://kokoro:8880").rstrip("/")
         with _u.urlopen(eng + "/v1/voices", timeout=5) as r:
@@ -73,11 +88,29 @@ def voices():
                 short = name[len("kokoro-voice-"):]
                 if short.endswith(".gguf"):
                     short = short[:-5]
-                if short and short not in kokoro:
-                    kokoro.append(short)
+                if short and short not in cached:
+                    cached.append(short)
     except Exception:
-        pass  # engine warming: options UI falls back to the saved value
-    return {"kokoro": sorted(kokoro), "chatterbox": ["default"]}
+        pass  # engine warming: roster still served, nothing marked cached
+    roster = sorted(set(KOKORO_ROSTER) | set(cached))
+    # Chatterbox voices = .wav reference profiles in its voice-dir
+    # (zero-shot cloning; "default" = built-in voice). Users add their
+    # own via POST /v1/voices (multipart); test-voice ships as a
+    # working synthetic example (no real speaker).
+    chatter: list[str] = []
+    try:
+        ceng = os.environ.get("CHATTERBOX_URL", "http://chatterbox:8004").rstrip("/")
+        with _u.urlopen(ceng + "/v1/voices", timeout=5) as r:
+            cdata = json.load(r)
+        for v in cdata.get("voices", []):
+            name = v.get("name", "") if isinstance(v, dict) else str(v)
+            fmt = v.get("format", "") if isinstance(v, dict) else ""
+            if name and (fmt == "wav" or name.endswith(".wav")) and name not in chatter:
+                chatter.append(name)
+    except Exception:
+        pass
+    return {"kokoro": roster, "cached": sorted(cached),
+            "chatterbox": ["default"] + sorted(chatter)}
 
 
 @app.get("/health")
@@ -118,6 +151,7 @@ def manifest(body: dict):
         "speed": float(body.get("speed", 1.0)),
         "model": body.get("model", "kokoro"),
         "dict_ver": dict_ver,
+        "consent": str(body.get("consent", "") or ""),
         "tag": body.get("engine_tag", "kokoro-v0.10.0"),
     }
     for s in sentences:

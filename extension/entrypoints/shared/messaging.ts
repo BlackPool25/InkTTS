@@ -37,6 +37,7 @@ export interface ServerSettings {
   voice: string;
   speed: number;
   model: 'kokoro' | 'chatterbox';
+  voiceConsent?: boolean; // user accepts responsibility for non-default voices
   perSite: Record<string, { voice?: string; model?: 'kokoro' | 'chatterbox' }>;
   siteRules?: string;
   pron?: string;

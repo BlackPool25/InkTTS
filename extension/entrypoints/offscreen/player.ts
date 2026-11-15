@@ -78,6 +78,9 @@ export class Player {
           sentences: paragraphs.map((text) => ({ text })),
           voice, speed: settings?.speed, model,
           pron: settings?.pron ?? '',
+          consent: settings?.voiceConsent
+            ? 'Operator accepts responsibility for using this non-default reference voice for playback (attested in InkCast settings).'
+            : '',
         }),
       });
       if (!r.ok) throw new Error(`manifest HTTP ${r.status}`);
