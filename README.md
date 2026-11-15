@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/assets/logo.png" alt="InkTTS logo — a pen nib flowing into an audio waveform" width="128" />
+  <img src="docs/assets/hero.png" alt="InkTTS — LAN Novel Read-Along. Local AI voices read your chapters aloud, with a highlight that follows the audio." />
 </p>
-
-<h1 align="center">InkTTS — LAN Novel Read-Along</h1>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
@@ -10,13 +8,6 @@
   <img src="https://img.shields.io/badge/GPU-Vulkan%20Mesa%20RADV-orange.svg" alt="GPU: Vulkan / Mesa" />
   <img src="https://img.shields.io/badge/engines-GGUF%20only-green.svg" alt="Engines: GGUF, no torch" />
   <img src="https://img.shields.io/badge/extension-Chrome%20MV3-red.svg" alt="Extension: Chrome MV3" />
-</p>
-
-<p align="center">
-  Read light novels on their websites, narrated by local AI voices with a
-  read-along highlight that follows the audio. One Docker stack on your LAN
-  renders the audio; a Chrome extension turns any chapter page into a
-  focused, immersive reader.
 </p>
 
 Topics: `text-to-speech` · `tts` · `kokoro` · `chatterbox` · `gguf` · `read-along` · `chrome-extension` · `novel-reader` · `lan-server` · `vulkan`
