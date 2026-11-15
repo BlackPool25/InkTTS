@@ -77,6 +77,7 @@ offscreen doc: gapless audio play     orchestrator (ours, one port):
   OCR chapters out of scope (fail loud).
 - UI: full-takeover card-lyrics overlay (ambient-blur, sentence default,
   karaoke toggle, focus span 1/3/5, 4 themes, smooth-follow 40% anchor);
+  immersive (prev/current/next only) is a toggle, OFF by default;
   TNs dropped entirely; acronyms = builder ABX call.
 - Text: keep our split/normalize/pron-dict in orchestrator (cache-keyed),
   plain-text + IPA passthrough; gates kept (min-length, challenge
