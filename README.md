@@ -16,6 +16,10 @@ Topics: `text-to-speech` · `tts` · `kokoro` · `chatterbox` · `gguf` · `read
 ![Reader overlay](docs/assets/screenshots/overlay.png)
 ![Playback with progress HUD](docs/assets/screenshots/overlay-playing.png)
 
+| Popup transport | All settings |
+|---|---|
+| ![Popup](docs/assets/screenshots/popup.png) | ![Options](docs/assets/screenshots/options.png) |
+
 ## Features
 
 - **28 Kokoro voices + 29 Chatterbox voices** — captured live from the models, picked from a dropdown (never typed). Chatterbox ships 28 premade MIT-licensed reference voices.

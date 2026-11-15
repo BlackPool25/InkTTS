@@ -126,10 +126,13 @@ const CSS = `
 .inktts-panel button { cursor: pointer; padding: 6px 12px; border-radius: 8px; border: 1px solid currentColor; background: transparent; color: inherit; font-size: 14px; min-height: 32px; }
 .inktts-panel button[aria-pressed=true] { border-color: #7c9cff; }
 .inktts-swatches { display: flex; gap: 8px; }
-.inktts-swatches button { min-width: 40px; height: 32px; border-radius: 8px; padding: 4px 10px; }
+.inktts-swatches button { min-width: 40px; height: 32px; border-radius: 8px; padding: 0; border: 2px solid rgba(255,255,255,0.25); }
+.inktts-swatches button[aria-pressed=true] { border-color: #7c9cff; box-shadow: 0 0 8px rgba(124,156,255,0.6); }
 .inktts-sw { width: 40px; padding: 0; }
-.inktts-sw-dark { background: #08080c; } .inktts-sw-ambient { background: radial-gradient(circle at 50% 0%, #2b3a67, #101018); }
-.inktts-sw-sepia { background: #f4ecd8; } .inktts-sw-light { background: #ffffff; }
+.inktts-swatches button.inktts-sw-dark { background: #08080c; }
+.inktts-swatches button.inktts-sw-ambient { background: radial-gradient(circle at 50% 0%, #2b3a67, #101018); }
+.inktts-swatches button.inktts-sw-sepia { background: #f4ecd8; }
+.inktts-swatches button.inktts-sw-light { background: #ffffff; }
 .inktts-endcard-row { display: flex; gap: 12px; justify-content: center; margin-top: 8px; }
 .inktts-primary-btn { background: #4f7cff; border-color: #4f7cff; color: #fff; font-weight: 600; }
 .inktts-hud { flex: none; padding: 8px 4vw 0; background: inherit; }
