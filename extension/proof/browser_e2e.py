@@ -1,7 +1,9 @@
 """Browser E2E: real headless Chrome, unpacked extension, fixture chapter.
-Proves the browser half: content script extracts real DOM, overlay mounts
-with sentences, seek re-renders, error states render. Server-half E2E is
-proof/e2e_live.py (live Kokoro render -> cache -> audio bytes).
+
+Drives through the POPUP page (full extension APIs) the way a user would:
+popup -> tabs.sendMessage(TOGGLE_OVERLAY) -> content extracts real DOM ->
+overlay mounts -> seek moves highlight. Challenge page -> loud error.
+Server-half E2E is proof/e2e_live.py (live Kokoro render -> cache -> audio).
 """
 import http.server
 import json
@@ -40,9 +42,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def ext_id(profile: str) -> str:
+    import time
+    pref = Path(profile, "Default/Preferences")
+    for _ in range(40):
+        if pref.exists():
+            try:
+                prefs = json.loads(pref.read_text())
+                settings = prefs["extensions"]["settings"]
+                for eid, info in settings.items():
+                    if info.get("manifest", {}).get("name", "") == "InkCast Read-Along":
+                        return eid
+                ids = list(settings.keys())
+                if len(ids) == 1:
+                    return ids[0]
+            except (json.JSONDecodeError, KeyError):
+                pass
+        time.sleep(0.5)
+    raise AssertionError("extension id not found in Preferences")
+
+
+TOGGLE = """async () => {
+  const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+  await chrome.tabs.sendMessage(tab.id, {type: 'TOGGLE_OVERLAY'});
+  return true;
+}"""
+
+
 def main():
     ext = str(Path("/home/shreyas/projects/InkCast/extension/.output/chrome-mv3"))
-    srv = socketserver.TCPServer(("127.0.0.1", 8901), Handler)
+    socketserver.TCPServer.allow_reuse_address = True
+    srv = socketserver.TCPServer(("127.0.0.1", 0), Handler)
+    port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     with sync_playwright() as pw:
@@ -51,62 +82,64 @@ def main():
             channel="chrome",
             headless=True,
             args=[f"--disable-extensions-except={ext}",
-                  f"--load-extension={ext}",
-                  "--autoplay-policy=no-user-gesture-required"],
+                  f"--load-extension={ext}"],
         )
         page = ctx.new_page()
+        await_probe = page
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(str(e)))
 
-        page.goto("http://127.0.0.1:8901/novelbuddy-ch1.html")
+        page.goto(f"http://127.0.0.1:{port}/novelbuddy-ch1.html")
         page.wait_for_timeout(1500)
-        # Drive the content script the way the popup would.
-        overlay = page.evaluate("""async () => {
-          const tabs = await chrome.tabs.query({active: true, currentWindow: true});
-          return tabs.length;
-        }""") if False else None
-        # Content scripts listen for runtime messages: send via the SW.
-        workers = list(ctx.service_workers)
-        assert workers, "extension service worker did not start"
-        awaitable = workers[0].evaluate("""async () => {
-          const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-          await chrome.tabs.sendMessage(tab.id, {type: 'TOGGLE_OVERLAY'});
-          return tab.id;
-        }""")
+        eid = ext_id("/tmp/pw-profile")
+        print("extension id:", eid[:8] + "…")
+        popup = ctx.new_page()
+        for attempt in range(5):
+            try:
+                popup.goto(f"chrome-extension://{eid}/popup.html")
+                break
+            except Exception as e:
+                print(f"popup goto retry {attempt}: {str(e)[:80]}")
+                page.wait_for_timeout(2000)
+                eid = ext_id("/tmp/pw-profile")
+        else:
+            raise AssertionError("popup.html never loaded")
+        popup.wait_for_timeout(1000)
+        popup.evaluate(TOGGLE)
         page.wait_for_timeout(1500)
 
-        host = page.evaluate("() => document.getElementById('inkcast-overlay-host') !== null")
+        host = page.evaluate(
+            "() => document.getElementById('inkcast-overlay-host') !== null")
         print("overlay mounted:", host)
+        assert host, "overlay did not mount"
         lines = page.evaluate(
             "() => document.getElementById('inkcast-overlay-host')"
             ".shadowRoot.querySelectorAll('[data-testid=line],[data-testid=line-active]').length")
         print("sentences rendered:", lines)
+        assert lines == 3, f"expected 3 sentences, got {lines}"
         active = page.evaluate(
             "() => document.getElementById('inkcast-overlay-host')"
-            ".shadowRoot.querySelector('[data-testid=line-active]')?.textContent?.slice(0, 40)")
+            ".shadowRoot.querySelector('[data-testid=line-active]').textContent.slice(0, 40)")
         print("active line:", active)
-        # Seek: click second sentence, active line follows.
         page.evaluate(
-            """() => { const h = document.getElementById('inkcast-overlay-host');
-               h.shadowRoot.querySelectorAll('[data-testid=line]')[0].click(); }""")
+            "() => { const h = document.getElementById('inkcast-overlay-host');"
+            " h.shadowRoot.querySelectorAll('[data-testid=line]')[0].click(); }")
         page.wait_for_timeout(500)
         active2 = page.evaluate(
             "() => document.getElementById('inkcast-overlay-host')"
-            ".shadowRoot.querySelector('[data-testid=line-active]')?.textContent?.slice(0, 40)")
+            ".shadowRoot.querySelector('[data-testid=line-active]').textContent.slice(0, 40)")
         print("after seek:", active2)
         assert active2 != active, "seek did not move the active line"
-        # Challenge page -> loud error overlay, never narration.
-        page.goto("http://127.0.0.1:8901/blocked.html")
+
+        page.goto(f"http://127.0.0.1:{port}/blocked.html")
         page.wait_for_timeout(1200)
-        workers[0].evaluate("""async () => {
-          const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-          await chrome.tabs.sendMessage(tab.id, {type: 'TOGGLE_OVERLAY'});
-        }""")
+        popup.bring_to_front()
+        popup.evaluate(TOGGLE)
         page.wait_for_timeout(1000)
         err = page.evaluate(
             "() => document.getElementById('inkcast-overlay-host')"
             "?.shadowRoot.querySelector('[data-testid=overlay-error]')?.textContent?.slice(0, 60)")
-        print("challenge overlay:", err)
+        print("challenge overlay:", (err or "").strip()[:60])
         assert err and "bot check" in err, "challenge did not render loud error"
         print("pageerrors:", errors if errors else "none")
         ctx.close()
