@@ -25,6 +25,7 @@ _api.CACHE = CACHE  # type: ignore[attr-defined] -- serves GET /audio
 breaker = _render.Breaker()
 DOC_TEXT: dict[str, list[dict]] = {}  # doc_id -> sentences [{idx,text}]
 DOC_META: dict[str, dict] = {}  # doc_id -> {voice,speed,model,dict_ver,tag}
+HEARTBEAT: dict[str, float] = {"loop": 0.0}  # last worker_loop iteration
 
 
 def key_for(doc: str, text: str) -> str:
@@ -37,36 +38,52 @@ def key_for(doc: str, text: str) -> str:
 
 def worker_loop(stop: threading.Event) -> None:
     while not stop.is_set():
+        HEARTBEAT["loop"] = time.time()
         job = _api.queue.pop()
         if job is None:
             time.sleep(0.05)
             continue
-        doc, idx = job["doc"], job["idx"]
-        sents = DOC_TEXT.get(doc, [])
-        sent = next((s for s in sents if s["idx"] == idx), None)
-        if sent is None:
-            continue
-        m = DOC_META.get(doc, {})
-        key = key_for(doc, sent["text"])
-        if CACHE.lookup(key):
-            _api.emit(doc, "ready", idx=idx, hash=key, cached=True)
-            continue
-        _api.emit(doc, "rendering", idx=idx)
         try:
-            r = _render.render_sentence(
-                sent["text"], m.get("voice", "af_heart"),
-                m.get("speed", 1.0), m.get("model", "kokoro"), doc,
-                breaker, KOKORO_URL, CHATTERBOX_URL)
-            CACHE.pinned.add(key)
-            CACHE.store(key, r["audio"], r.get("dur_ms", 0),
-                        {"voice": m.get("voice", ""), "speed": m.get("speed", ""),
-                         "model": m.get("model", "")})
-            CACHE.pinned.discard(key)
-            _api.emit(doc, "ready", idx=idx, hash=key,
-                      degraded=r.get("degraded", False))
-        except _render.RenderError as e:
-            _api.emit(doc, "failed", idx=idx, error_class=e.error_class,
-                      reason=str(e)[:120])
+            render_job(job)
+        except Exception:
+            # Never let the worker die silent: loud event + log, thread lives.
+            import traceback
+            traceback.print_exc()
+            try:
+                _api.emit(job["doc"], "failed", idx=job["idx"],
+                          error_class="worker",
+                          reason="orchestrator worker error (see logs)")
+            except Exception:
+                pass
+
+
+def render_job(job: dict) -> None:
+    doc, idx = job["doc"], job["idx"]
+    sents = DOC_TEXT.get(doc, [])
+    sent = next((s for s in sents if s["idx"] == idx), None)
+    if sent is None:
+        return
+    m = DOC_META.get(doc, {})
+    key = key_for(doc, sent["text"])
+    if CACHE.lookup(key):
+        _api.emit(doc, "ready", idx=idx, hash=key, cached=True)
+        return
+    _api.emit(doc, "rendering", idx=idx)
+    try:
+        r = _render.render_sentence(
+            sent["text"], m.get("voice", "af_heart"),
+            m.get("speed", 1.0), m.get("model", "kokoro"), doc,
+            breaker, KOKORO_URL, CHATTERBOX_URL)
+        CACHE.pinned.add(key)
+        CACHE.store(key, r["audio"], r.get("dur_ms", 0),
+                    {"voice": m.get("voice", ""), "speed": m.get("speed", ""),
+                     "model": m.get("model", "")})
+        CACHE.pinned.discard(key)
+        _api.emit(doc, "ready", idx=idx, hash=key,
+                  degraded=r.get("degraded", False))
+    except _render.RenderError as e:
+        _api.emit(doc, "failed", idx=idx, error_class=e.error_class,
+                  reason=str(e)[:120])
 
 
 def start() -> threading.Event:

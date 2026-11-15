@@ -17,6 +17,9 @@ ABBREV = ("Mr.", "Mrs.", "Ms.", "Dr.", "St.", "Jr.", "Sr.", "vs.",
           "etc.", "e.g.", "i.e.", "Prof.", "Gen.", "Sgt.", "Lt.")
 _SENT_SPLIT = re.compile(r"(?<=[.!?。！？])\s+(?=[\"“‘\(\[]?[A-Z0-9\u4e00-\u9fff])")
 _MAX_SENT_CHARS = 300  # synth-request budget: ~20s audio max, keeps each
+_MIN_MERGE_CHARS = 60  # fragments shorter than this merge into the next
+# sentence (dialogue interjections like "My Lord!" must not become their
+# own overlay line + audio file — they flash past and feel like skips).
 _CLAUSE_CUT = ",;:—–-"
 # render under the per-sentence timeout on CPU voices.
 MIN_CHARS = 20  # extension text is user-visible: lower floor than scraper
@@ -84,7 +87,32 @@ def split_sentences(text: str) -> list[str]:
             p = p[cut:].strip()
         if p:
             out.append(p)
-    return out
+    # Merge stub fragments so one breath = one line = one audio file.
+    # Forward (stub joins the next sentence, keeping dialogue together);
+    # a trailing stub joins the previous one. Never exceed the max budget.
+    res: list[str] = []
+    pending = ""
+    for frag in out:
+        if pending:
+            combined = f"{pending} {frag}"
+            if len(combined) <= _MAX_SENT_CHARS:
+                frag = combined
+                pending = ""
+            else:
+                res.append(pending)  # next is full: lone stub stays (rare)
+                pending = ""
+        if len(frag) < _MIN_MERGE_CHARS:
+            pending = frag
+        else:
+            res.append(frag)
+    if pending:
+        if res and len(res[-1]) + 1 + len(pending) <= _MAX_SENT_CHARS:
+            res[-1] = f"{res[-1]} {pending}"
+        elif res:
+            res.append(pending)  # previous full: lone stub stays (rare)
+        else:
+            res.append(pending)  # only fragment: keep it
+    return [m for m in res if m]
 
 
 def process_chapter(paragraphs: list[str],

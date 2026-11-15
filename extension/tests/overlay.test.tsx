@@ -11,17 +11,19 @@ const SENTS = [
 ];
 
 describe('overlay', () => {
-  it('marks active sentence, dims far lines', () => {
+  it('marks active sentence, dims out-of-band lines', () => {
+    const many = [...SENTS, ...SENTS, ...SENTS];
     const html = renderToString(
-      <Overlay sentences={SENTS} activeIdx={1} focusSpan={1} />,
+      <Overlay sentences={many} activeIdx={6} focusSpan={1} />,
     );
     expect(html).toContain('line-active');
-    expect(html).toContain('ink-dim');
+    expect(html).toContain('ink-far');
   });
 
-  it('immersive shows only +-1', () => {
+  it('immersive band is -2/+3', () => {
     const [lo, hi] = visibleRange(2, 4, true, 3);
-    expect([lo, hi]).toEqual([1, 4]);
+    expect([lo, hi]).toEqual([0, 4]);
+    expect(visibleRange(10, 53, true, 3)).toEqual([8, 13]);
   });
 
   it('renders one error state per code with copy', () => {
@@ -46,5 +48,67 @@ describe('overlay', () => {
   it('degraded badge renders when set', () => {
     const html = renderToString(<Overlay sentences={SENTS} activeIdx={0} degraded />);
     expect(html).toContain('degraded-badge');
+  });
+
+  it('immersive is a dim wash: all lines render, out-of-window dimmed', () => {
+    const html = renderToString(
+      <Overlay sentences={SENTS} activeIdx={0} />,
+    );
+    expect((html.match(/data-idx/g) || []).length).toBe(4);
+    expect(html).toContain('ink-far');
+    expect(html).not.toContain('ink-hidden');
+  });
+
+  it('control bar auto-hides (class hook present)', () => {
+    const html = renderToString(
+      <Overlay sentences={SENTS} activeIdx={0} />,
+    );
+    expect(html).toContain('ink-bar');
+  });
+
+  it('chapter progress bar fills with active index', () => {
+    const html = renderToString(
+      <Overlay sentences={SENTS} activeIdx={1} phase="playing" />,
+    );
+    expect(html).toContain('chapter-progress');
+    expect(html).toContain('ink-hpfill');
+    expect(html).toContain('width:50%');
+    expect(html).toContain('2 / 4');
+  });
+
+  it('phases drive the transport buttons', () => {
+    const loading = renderToString(
+      <Overlay sentences={SENTS} activeIdx={0} phase="loading" />,
+    );
+    expect(loading).toContain('Starting…');
+    expect(loading).toContain('disabled');
+    const paused = renderToString(
+      <Overlay sentences={SENTS} activeIdx={0} phase="paused" />,
+    );
+    expect(paused).toContain('Resume');
+    const playing = renderToString(
+      <Overlay sentences={SENTS} activeIdx={0} phase="playing" />,
+    );
+    expect(playing).toContain('Pause');
+    const idle = renderToString(
+      <Overlay sentences={SENTS} activeIdx={0} phase="idle" />,
+    );
+    expect(idle).toContain('>Play<');
+  });
+
+  it('setup state renders when server URL missing', () => {
+    const html = renderToString(
+      <Overlay sentences={SENTS} activeIdx={0} setupNeeded />,
+    );
+    expect(html).toContain('overlay-setup');
+    expect(html).toContain('Connect your TTS server');
+  });
+
+  it('karaoke fill uses clip-path wipe', () => {
+    const html = renderToString(
+      <Overlay sentences={SENTS} activeIdx={0} karaoke wordFrac={0.5} />,
+    );
+    expect(html).toContain('karaoke-fill');
+    expect(html).toContain('clip-path');
   });
 });

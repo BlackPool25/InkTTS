@@ -10,9 +10,9 @@ from orchestrator.textpipe import (build_lrc, gate_paragraph,
 
 
 def test_split_abbrev_acronym_numbers():
-    sents = split_sentences("Mr. FBI paid $5 for 3 eggs. She left.")
-    assert sents[0] == "Mr. FBI paid $5 for 3 eggs."
-    assert sents[1] == "She left."
+    sents = split_sentences("Mr. FBI paid $5 for 3 eggs at the corner store on fifth street. She left the market quickly with a full basket of fresh vegetables and bread.")
+    assert sents[0] == "Mr. FBI paid $5 for 3 eggs at the corner store on fifth street."
+    assert sents[1] == "She left the market quickly with a full basket of fresh vegetables and bread."
 
 
 def test_turnstile_blocked():
@@ -46,6 +46,28 @@ def test_dialogue_with_read_more_survives():
         "\"You should read more books,\" she said, and left the library quietly."
     ])
     assert len(sents) == 1 and "read more" in sents[0]["text"]
+
+
+def test_stub_fragments_merge_forward():
+    sents, _ = process_chapter([
+        '"My Lord! Please! You cannot simply go off on your own!" Fabian\u2019s voice erupted in panic.'
+    ])
+    assert len(sents) == 1
+    assert "My Lord!" in sents[0]["text"] and "Fabian" in sents[0]["text"]
+
+
+def test_trailing_stub_merges_back():
+    sents, _ = process_chapter([
+        'He walked home slowly through the rain and thought of nothing at all in particular. Yes indeed.'
+    ])
+    assert len(sents) == 1
+
+
+def test_full_sentences_stay_split():
+    a = 'The harbor bells rang at dawn across the quiet water while the sailors mended their heavy fishing nets.'
+    b = 'Gulls scattered screaming over the grey rooftops of the sleeping town below the white cliffs.'
+    sents, _ = process_chapter([a + ' ' + b])
+    assert len(sents) == 2
 
 
 def test_request_chunks_budget():

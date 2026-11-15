@@ -57,8 +57,14 @@ def emit(doc: str, typ: str, **data) -> None:
 
 @app.get("/health")
 def health():
+    try:
+        from . import server as _srv
+        loop_age = time.time() - _srv.HEARTBEAT.get("loop", 0.0)
+    except Exception:
+        loop_age = -1.0
     return {"status": "ready", "engines": {"kokoro": "up",
-                                           "chatterbox": "idle"}}
+                                           "chatterbox": "idle"},
+            "worker_loop_age_s": round(loop_age, 1)}
 
 
 @app.post("/manifest")
@@ -118,17 +124,32 @@ def audio(h: str):
 @app.get("/events")
 def events(doc_id: str, last_event_id: int = 0):
     def gen():
+        yield "retry: 3000\n\n"
         if last_event_id and rings[doc_id]:
             tail = [e for e in rings[doc_id] if e["id"] > last_event_id]
             if tail and tail[0]["id"] == last_event_id + 1:
                 for e in tail:
                     yield f"id: {e['id']}\nevent: {e['type']}\ndata: {json.dumps(e)}\n\n"
+            else:
+                yield (f"event: resync\ndata: {json.dumps({'playhead': playheads.get(doc_id, 0)})}\n\n")
                 return
-            yield (f"event: resync\ndata: {json.dumps({'playhead': playheads.get(doc_id, 0)})}\n\n")
-            return
-        # Live tail: replay last 5 so reconnects never wait silently.
-        for e in list(rings[doc_id])[-5:]:
-            yield f"id: {e['id']}\nevent: {e['type']}\ndata: {json.dumps(e)}\n\n"
+        else:
+            # Live tail: replay last 5 so reconnects never wait silently.
+            for e in list(rings[doc_id])[-5:]:
+                yield f"id: {e['id']}\nevent: {e['type']}\ndata: {json.dumps(e)}\n\n"
+        # Long-poll: hold the stream ~25s, emitting heartbeats + new events.
+        # EventSource reconnects on close; replay-above covers the gap.
+        import time as _t
+        seen = cursors[doc_id]
+        end = _t.time() + 25
+        while _t.time() < end:
+            _t.sleep(0.5)
+            fresh = [e for e in rings[doc_id] if e["id"] > seen]
+            for e in fresh:
+                seen = max(seen, e["id"])
+                yield f"id: {e['id']}\nevent: {e['type']}\ndata: {json.dumps(e)}\n\n"
+            if not fresh:
+                yield ": hb\n\n"
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 

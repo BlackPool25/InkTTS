@@ -61,6 +61,15 @@ def test_sse_ring_replay_and_resync():
     assert "resync" in r2.text or "manifest" in r2.text
 
 
+def test_sse_retry_and_heartbeat():
+    from fastapi.testclient import TestClient
+    from orchestrator import api as A
+    c = TestClient(A.app)
+    r = c.get("/events", params={"doc_id": "d-hb"})
+    assert "retry: 3000" in r.text
+    assert ": hb" in r.text
+
+
 def test_cors_allows_extension_origin():
     from fastapi.testclient import TestClient
     from orchestrator import api as A
