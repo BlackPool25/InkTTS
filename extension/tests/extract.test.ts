@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { extractChapter, extractTitle, findChapterUrl, setRuleOverrides } from '../entrypoints/content/extract';
+import { describe, expect, it, vi } from 'vitest';
+import { extractAuthor, extractChapter, extractTitle, findChapterUrl, findPageNext, setRuleOverrides, stitchChapterPages } from '../entrypoints/content/extract';
+import type { ExtractOk } from '../entrypoints/content/extract';
 
 function doc(html: string, url = 'https://novelbuddy.com/ch/1'): Document {
   const d = document.implementation.createHTMLDocument('t');
@@ -130,5 +131,124 @@ describe('title + chapter nav', () => {
     } finally {
       setRuleOverrides('[]');
     }
+  });
+});
+
+const LOGIN_WALL = `<html><head><title>Login</title></head><body>
+<h1>Please log in to continue reading this chapter right now</h1>
+<form><input type="text" name="u" /><input type="password" name="p" /></form>
+</body></html>`;
+
+const LOGIN_SIDEBAR = `<html><head><title>Ch 1</title></head><body>
+<h1>Chapter 1</h1>
+<aside><form><input type="password" name="p" /></form></aside>
+<div id="chapter-content">
+<p>The lanterns swayed in the evening wind over the quiet harbor town where old sailors mended their nets.</p>
+<p>He walked home slowly through the rain, thinking of nothing at all in particular today.</p>
+</div></body></html>`;
+
+const MADARA = `<html><head><title>Ch 5 - Some Novel</title>
+<meta name="author" content="Jane Doe" /></head><body class="madara">
+<h1>Chapter 5</h1>
+<div class="reading-content">
+<p>The lanterns swayed in the evening wind over the quiet harbor town where old sailors mended their nets.</p>
+<p>He walked home slowly through the rain, thinking of nothing at all in particular today.</p>
+</div></body></html>`;
+
+const RULE_ROT = `<html><head><title>Ch 1</title></head><body>
+<h1>Chapter 1</h1>
+<article><div class="redesigned-body">
+<p>The lanterns swayed in the evening wind over the quiet harbor town where old sailors mended their nets.</p>
+<p>"You should read more books," she said, and left the library quietly without another word.</p>
+<p>He walked slowly through the dark marketplace, thinking of nothing at all in particular.</p>
+<p>Additional filler prose to clear the readability length threshold for extraction testing.</p>
+</div></article></body></html>`;
+
+function pageHtml(title: string, body: string, nextHref: string | null): string {
+  return `<html><head><title>${title}</title></head><body><h1>${title}</h1>
+<div id="chapter-content">${body}</div>
+${nextHref ? `<a href="${nextHref}">Next Page</a>` : ''}
+</body></html>`;
+}
+
+const P = (t: string): string => `<p>${t}</p>`;
+const LONG = 'The lanterns swayed in the evening wind over the quiet harbor town where old sailors mended their nets';
+
+describe('login, author, CMS templates, rule rot', () => {
+  it('login wall fails loud as locked', () => {
+    const r = extractChapter(doc(LOGIN_WALL, 'https://example.com/novel/x/chapter-9'), 'https://example.com/novel/x/chapter-9');
+    expect(r).toMatchObject({ error: 'locked' });
+  });
+
+  it('sidebar login form does not block a real chapter', () => {
+    const r = extractChapter(doc(LOGIN_SIDEBAR, 'https://novelbuddy.com/ch/1'), 'https://novelbuddy.com/ch/1');
+    if (!('paragraphs' in r)) throw new Error('expected ok: ' + JSON.stringify(r));
+    expect(r.paragraphs.length).toBe(2);
+  });
+
+  it('Madara theme extracts via CMS template with author', () => {
+    const d = doc(MADARA, 'https://unknown-madara.example/novel/x/chapter-5');
+    expect(extractAuthor(d)).toBe('Jane Doe');
+    const r = extractChapter(d, 'https://unknown-madara.example/novel/x/chapter-5');
+    if (!('paragraphs' in r)) throw new Error('expected ok: ' + JSON.stringify(r));
+    expect(r.paragraphs.length).toBe(2);
+    expect(r.author).toBe('Jane Doe');
+    expect(r.fallback).toBeUndefined();
+  });
+
+  it('rule hit but empty falls back flagged', () => {
+    const r = extractChapter(doc(RULE_ROT, 'https://novelbuddy.com/ch/1'), 'https://novelbuddy.com/ch/1');
+    if (!('paragraphs' in r)) throw new Error('expected fallback ok: ' + JSON.stringify(r));
+    expect(r.paragraphs.length).toBeGreaterThan(0);
+    expect(r.fallback).toBe(true);
+  });
+});
+
+describe('page stitch', () => {
+  const url1 = 'https://example.com/novel/x/chapter-9';
+  const body1 = P(`${LONG} on the docks where the gulls cried.`) + P('She drew her sword and faced the darkness gathering at the edge of the forest.');
+  const body2 = P('He walked slowly through the dark marketplace, thinking of nothing at all in particular.') + P('The bell tolled midnight as the last candle flickered out in the draft.');
+
+  function mockFetch(pages: Record<string, string>) {
+    return vi.fn(async (u: unknown) => {
+      const html = pages[String(u)];
+      if (!html) throw new Error('blocked');
+      return { ok: true, text: async () => html };
+    });
+  }
+
+  it('stitches page 2 of the same chapter', async () => {
+    const h1 = pageHtml('Chapter 9', body1, '/novel/x/chapter-9/2/');
+    const h2 = pageHtml('Chapter 9', body2, null);
+    const d1 = doc(h1, url1);
+    const r = extractChapter(d1, url1);
+    if (!('paragraphs' in r)) throw new Error('expected ok');
+    expect(findPageNext(d1, url1)).toContain('/chapter-9/2/');
+    const st = await stitchChapterPages(r as ExtractOk, d1, url1,
+      mockFetch({ 'https://example.com/novel/x/chapter-9/2/': h2 }) as unknown as typeof fetch);
+    expect(st.pages).toBe(2);
+    expect(st.paragraphs.length).toBe(4);
+  });
+
+  it('stops when the next page has a different chapter title', async () => {
+    const h1 = pageHtml('Chapter 9', body1, '/novel/x/chapter-10');
+    const h2 = pageHtml('Chapter 10', body2, null);
+    const d1 = doc(h1, url1);
+    const r = extractChapter(d1, url1);
+    if (!('paragraphs' in r)) throw new Error('expected ok');
+    const st = await stitchChapterPages(r as ExtractOk, d1, url1,
+      mockFetch({ 'https://example.com/novel/x/chapter-10': h2 }) as unknown as typeof fetch);
+    expect(st.pages).toBe(1);
+    expect(st.paragraphs.length).toBe(2);
+  });
+
+  it('failed fetch keeps page 1', async () => {
+    const h1 = pageHtml('Chapter 9', body1, '/novel/x/chapter-9/?page=2');
+    const d1 = doc(h1, url1);
+    const r = extractChapter(d1, url1);
+    if (!('paragraphs' in r)) throw new Error('expected ok');
+    const st = await stitchChapterPages(r as ExtractOk, d1, url1,
+      mockFetch({}) as unknown as typeof fetch);
+    expect(st.pages).toBe(1);
   });
 });

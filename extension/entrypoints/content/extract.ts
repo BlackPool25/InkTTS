@@ -1,6 +1,7 @@
 // Chapter extraction: challenge check -> site-rule container FIRST ->
-// Readability (cloned document) fallback -> strips -> promo sweep ->
-// next-page stitch (cap 5, URL discipline) -> loud gates.
+// CMS template (Madara/WordPress) -> Readability (cloned document) fallback
+// -> strips -> promo sweep -> loud gates. Multi-page chapters stitched by
+// stitchChapterPages (cap 5, URL discipline + title-equality guard).
 // Paragraphs always emitted in DOM order. Title never enters paragraphs.
 import { Readability } from '@mozilla/readability';
 
@@ -8,14 +9,17 @@ export type ExtractError =
   | 'empty'
   | 'boilerplate'
   | 'challenge'
+  | 'locked'
   | 'image-only';
 
 export interface ExtractOk {
   title: string; // chapter label ("Chapter 6: Seeking a New Core")
   novel: string | null; // novel title ("My Step-Daughters…"), null if unknown
+  author: string | null; // byline when the page exposes one, else null
   paragraphs: string[];
   nextUrl: string | null;
   prevUrl: string | null;
+  fallback?: boolean; // true when a host rule matched but produced nothing (rule rot signal)
 }
 
 export type ExtractResult = ExtractOk | { error: ExtractError; detail: string };
@@ -101,6 +105,47 @@ const PROMO_LINES = /support us on|visit patreon|read ahead on|this chapter was 
 export let RULE_VERSION = 1;
 export let ruleFallbacks = 0; // telemetry: rule hit but empty -> fallback
 
+/** CMS-template rules: one entry covers dozens of translator sites that
+ * share a theme (Madara / generic WordPress). Tried when no host rule
+ * matches, before the Readability fallback. */
+const CMS_STRIP = ['script', 'style', 'iframe', 'nav', '.ads', '.code-block',
+  '#comments', '.comment-list', '.chapternav', '.cmt', '.sharedaddy', '.wp-block-buttons'];
+
+function detectCmsRule(doc: Document): SiteRule | null {
+  if (
+    doc.querySelector('.wp-manga-chapter, #manga-chapters-holder, .reading-content')
+    || doc.querySelector('link[href*="madara"], body[class*="madara"]')
+  ) {
+    return {
+      match: /./,
+      content: ['.reading-content', '.text-left', '.entry-content', '.post-content', '#chapter-content', '.chapter-content'],
+      strip: CMS_STRIP, version: 1,
+    };
+  }
+  const gen = doc.querySelector('meta[name="generator"]')?.getAttribute('content') || '';
+  if (/wordpress/i.test(gen) || doc.querySelector('.entry-content, .post-content')) {
+    return {
+      match: /./,
+      content: ['.entry-content', '.post-content', '#content', '.chapter-content'],
+      strip: CMS_STRIP, version: 1,
+    };
+  }
+  return null;
+}
+
+/** Byline: meta author first, then rel=author. Null when absent. */
+export function extractAuthor(doc: Document): string | null {
+  const meta = (doc.querySelector('meta[name="author"]')?.getAttribute('content') || '').trim()
+    || (doc.querySelector('meta[property="article:author"]')?.getAttribute('content') || '').trim();
+  if (meta) return meta;
+  const rel = (doc.querySelector('[rel="author"]')?.textContent || '').replace(/\s+/g, ' ').trim();
+  return rel || null;
+}
+
+function hasLoginForm(doc: Document): boolean {
+  return doc.querySelector('input[type="password"]') !== null;
+}
+
 function stripBlocks(root: Element): void {
   for (const s of PROMO_SELECTORS) {
     try {
@@ -141,7 +186,7 @@ export function ruleFor(url: string): SiteRule | null {
     ?? null;
 }
 
-function isChallenge(doc: Document): boolean {
+export function isChallenge(doc: Document): boolean {
   if (CHALLENGE_TITLE.test(doc.title)) return true;
   return CHALLENGE_SELECTORS.some((s) => doc.querySelector(s) !== null);
 }
@@ -150,30 +195,62 @@ export function extractChapter(doc: Document, url: string): ExtractResult {
   if (isChallenge(doc)) {
     return { error: 'challenge', detail: 'bot check present — solve it, then retry' };
   }
+  const res = extractSinglePage(doc, url);
+  if (('paragraphs' in res) || !hasLoginForm(doc)) return res;
+  // Nothing readable AND a password field on the page: a login/paywall
+  // wall, not an empty chapter. (Login widgets in sidebars are ignored
+  // once real chapter text exists — this branch only runs on failure.)
+  if (res.error === 'empty' || res.error === 'boilerplate') {
+    return { error: 'locked', detail: 'login or paywall — sign in on the page, then retry' };
+  }
+  return res;
+}
+
+function extractFromRule(doc: Document, url: string, rule: SiteRule, title: string, novel: string | null, author: string | null): ExtractOk | null {
+  for (const sel of rule.content) {
+    const root = doc.querySelector(sel);
+    if (!root) continue;
+    const clone = root.cloneNode(true) as Element;
+    for (const s of rule.strip) {
+      try { clone.querySelectorAll(s).forEach((n) => n.remove()); } catch { /* bad selector: skip */ }
+    }
+    stripBlocks(clone);
+    const paras = parasFrom(clone).filter((p) => p !== title);
+    if (paras.length > 0) {
+      return {
+        title: title || 'Untitled chapter', novel, author, paragraphs: paras,
+        nextUrl: findChapterUrl(doc, url, 'next'),
+        prevUrl: findChapterUrl(doc, url, 'prev'),
+      };
+    }
+  }
+  return null;
+}
+
+/** Single-page extraction: host rule -> CMS template -> Readability.
+ * No fetching, no stitching (see stitchChapterPages). */
+export function extractSinglePage(doc: Document, url: string): ExtractResult {
   const { title, novel } = extractTitle(doc);
+  const author = extractAuthor(doc);
   const rule = ruleFor(url);
 
   if (rule) {
-    for (const sel of rule.content) {
-      const root = doc.querySelector(sel);
-      if (!root) continue;
-      const clone = root.cloneNode(true) as Element;
-      for (const s of rule.strip) {
-        try { clone.querySelectorAll(s).forEach((n) => n.remove()); } catch { /* bad selector: skip */ }
-      }
-      stripBlocks(clone);
-      const paras = parasFrom(clone).filter((p) => p !== title);
-      if (paras.length > 0) {
-        return {
-          title: title || 'Untitled chapter', novel, paragraphs: paras,
-          nextUrl: findChapterUrl(doc, url, 'next'),
-          prevUrl: findChapterUrl(doc, url, 'prev'),
-        };
-      }
-    }
-    // Rule hit but all containers empty -> fall through to Readability,
-    // counted as fallback (telemetry for rule rot).
+    const hit = extractFromRule(doc, url, rule, title, novel, author);
+    if (hit) return hit;
+    // Rule hit but all containers empty -> fall through to generic,
+    // flagged so the overlay can surface rule rot.
     ruleFallbacks += 1;
+    const cms = detectCmsRule(doc);
+    if (cms) {
+      const chit = extractFromRule(doc, url, cms, title, novel, author);
+      if (chit) return { ...chit, fallback: true };
+    }
+  } else {
+    const cms = detectCmsRule(doc);
+    if (cms) {
+      const chit = extractFromRule(doc, url, cms, title, novel, author);
+      if (chit) return chit;
+    }
   }
 
   // Fallback: Readability on a CLONED document (never mutates the page),
@@ -190,11 +267,13 @@ export function extractChapter(doc: Document, url: string): ExtractResult {
     if (imgs > 0) return { error: 'image-only', detail: 'image-only chapter — OCR out of scope' };
     return { error: 'empty', detail: 'no paragraphs extracted' };
   }
-  return {
-    title: article.title || title || 'Untitled chapter', novel, paragraphs: paras,
+  const out: ExtractOk = {
+    title: article.title || title || 'Untitled chapter', novel, author, paragraphs: paras,
     nextUrl: findChapterUrl(doc, url, 'next'),
     prevUrl: findChapterUrl(doc, url, 'prev'),
   };
+  if (rule) out.fallback = true;
+  return out;
 }
 
 /** Chapter title + novel, layered: og:title minus site_name, then
@@ -375,6 +454,101 @@ function normUrl(u: string): string {
   } catch {
     return u;
   }
+}
+
+/** Same-chapter page stitching (multi-page chapters: ?page=2, /2/, _2.html).
+ * Strict URL discipline: the candidate must share the page stem with a
+ * page index exactly one higher. A title-equality guard stops the loop
+ * from bleeding into the NEXT CHAPTER (chapter-9 vs chapter-10 share a
+ * numeric tail). Cap 5 pages total; any fetch/parse failure ends the
+ * stitch with what we have — never loud, never guessing. */
+function splitPage(u: URL): { stem: string; idx: number } | null {
+  const s = u.toString();
+  let m = s.match(/[?&](?:page|p)=(\d+)/i);
+  if (m) return { stem: s.replace(m[0], ''), idx: parseInt(m[1], 10) };
+  m = s.match(/([_-]\d+)\.html?(?=[#?]|$)/i);
+  if (m) return { stem: s.replace(m[1], ''), idx: parseInt(m[1].slice(1), 10) };
+  m = s.match(/\/(\d+)\/?(?=[#?]|$)/);
+  if (m) return { stem: s.replace(m[0], '/'), idx: parseInt(m[1], 10) };
+  return null;
+}
+
+export function findPageNext(doc: Document, url: string): string | null {
+  let base: URL;
+  try {
+    base = new URL(url);
+  } catch {
+    return null;
+  }
+  // URL discipline proposes, title-equality (in stitchChapterPages) disposes:
+  // chapter-9 -> chapter-10 can look like page 9 -> page 10, so a bare
+  // numeric tail is only trusted when the candidate extends the base URL
+  // itself (.../chapter-9/2/) or continues an established page stem.
+  const normB = normUrl(url);
+  const b = splitPage(base);
+  const noSlash = (s: string): string => s.replace(/\/$/, '');
+  let best: string | null = null;
+  doc.querySelectorAll('a[href]').forEach((node) => {
+    if (best) return;
+    const raw = (node as HTMLAnchorElement).getAttribute('href');
+    if (!raw) return;
+    let u: URL;
+    try {
+      u = new URL(raw, base);
+    } catch {
+      return;
+    }
+    if (u.host !== base.host) return;
+    const c = splitPage(u);
+    if (!c) return;
+    const cStem = noSlash(c.stem);
+    let baseIdx: number | null = null;
+    if (cStem === normB) {
+      baseIdx = (b && noSlash(b.stem) === normB) ? b.idx : 1;
+    } else if (b && cStem === noSlash(b.stem)) {
+      baseIdx = b.idx;
+    } else {
+      return;
+    }
+    if (c.idx !== baseIdx + 1) return;
+    best = validNav(u.toString(), base);
+  });
+  return best;
+}
+
+const normTitle = (t: string): string => t.toLowerCase().replace(/\s+/g, ' ').trim();
+
+export async function stitchChapterPages(
+  first: ExtractOk, doc: Document, url: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<{ paragraphs: string[]; pages: number }> {
+  const out = [...first.paragraphs];
+  let cur = doc;
+  let curUrl = url;
+  let pages = 1;
+  for (let i = 1; i < 5; i++) {
+    const nxt = findPageNext(cur, curUrl);
+    if (!nxt) break;
+    let html: string;
+    try {
+      const r = await fetchFn(nxt);
+      if (!r.ok) break;
+      html = await r.text();
+    } catch {
+      break; // offline/blocked: keep what we have
+    }
+    const d = new DOMParser().parseFromString(html, 'text/html');
+    if (isChallenge(d)) break;
+    const r2 = extractSinglePage(d, nxt);
+    if (!('paragraphs' in r2)) break;
+    if (normTitle(r2.title) !== normTitle(first.title)) break; // next chapter, not next page
+    if (r2.paragraphs.length === 0) break;
+    out.push(...r2.paragraphs);
+    pages += 1;
+    cur = d;
+    curUrl = nxt;
+  }
+  return { paragraphs: out, pages };
 }
 
 /** Settle-wait: chapter paragraphs loaded lazily — wait until the child

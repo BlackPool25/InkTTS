@@ -1,4 +1,5 @@
-import { extractChapter, setRuleOverrides } from './content/extract';
+import { extractChapter, isChallenge, setRuleOverrides, settleAndExtract, stitchChapterPages } from './content/extract';
+import type { ExtractOk } from './content/extract';
 import { mountOverlay, rerenderOverlay } from './content/mount';
 import { consumeChapterHandoff, loadSettings, saveSettings, setChapterHandoff } from './shared/messaging';
 
@@ -51,6 +52,9 @@ export default defineContentScript({
   let prevUrl: string | null = null;
   let chapterTitle = '';
   let novelTitle: string | null = null;
+  let authorName: string | null = null;
+  let fallbackNotice = false;
+  let lastError: string | null = null;
   let followPaused = false;
   let theme: 'dark' | 'ambient' | 'sepia' | 'light' = 'dark';
   const THEMES = ['dark', 'ambient', 'sepia', 'light'] as const;
@@ -61,6 +65,8 @@ export default defineContentScript({
       activeIdx: active,
       chapterTitle,
       novelTitle,
+      author: authorName,
+      fallbackNotice,
       theme,
       degraded,
       loading: loading !== false,
@@ -390,6 +396,7 @@ export default defineContentScript({
     } catch (e) {
       // Extraction must never die silent: loud error, not nothing.
       sentences = [];
+      lastError = 'crashed';
       teardown = mountOverlay({
         ...currentProps(),
         sentences: [],
@@ -399,6 +406,7 @@ export default defineContentScript({
     }
     if ('error' in res) {
       sentences = [];
+      lastError = res.error;
       const props = {
         ...currentProps(),
         sentences: [],
@@ -418,7 +426,36 @@ export default defineContentScript({
     prevUrl = res.prevUrl;
     chapterTitle = res.title;
     novelTitle = res.novel;
+    authorName = res.author;
+    fallbackNotice = res.fallback === true;
+    lastError = null;
     teardown = mountOverlay(currentProps());
+    // Settle + stitch in the background: the instant mount above may have
+    // caught a lazy chapter mid-load or only page 1 of N. If the user has
+    // not pressed Play yet, fold the fuller text in silently.
+    void (async () => {
+      try {
+        const url = location.href;
+        const settled = await settleAndExtract(document, url);
+        if (!('paragraphs' in settled) || hasBooted) return;
+        let paras = settled.paragraphs;
+        const first = settled as ExtractOk;
+        try {
+          const st = await stitchChapterPages(first, document, url);
+          if (hasBooted) return;
+          paras = st.paragraphs;
+        } catch { /* stitch failed: settled text still wins */ }
+        if (!hasBooted && paras.length > sentences.length) {
+          sentences = paras;
+          active = 0;
+          chapterTitle = first.title;
+          novelTitle = first.novel;
+          authorName = first.author;
+          if (first.fallback === true) fallbackNotice = true;
+          rerenderOverlay(currentProps());
+        }
+      } catch { /* background enrichment: never break the mounted reader */ }
+    })();
     // Mount is instant with local paragraphs. BOOT (server manifest +
     // audio) only on explicit Play — opening the reader never auto-plays.
     // Apply stored prefs (theme/karaoke/speed) + user site-rule overrides.
@@ -477,9 +514,29 @@ export default defineContentScript({
     }, 800);
   })();
 
-  // Challenge cleared (user solved the checkbox): auto re-extract once.
+  // Challenge solved (user cleared the checkbox): auto re-extract once,
+  // reusing the Retry path. Debounced so checkbox toggles don't thrash.
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  function reopen(): void {
+    if (teardown) {
+      const t = teardown;
+      teardown = null;
+      t();
+    }
+    openOverlay(false);
+  }
   const obs = new MutationObserver(() => {
-    if (teardown) return; // overlay already up
+    if (!teardown) return; // overlay already up
+    if (lastError !== 'challenge' && lastError !== 'locked') return;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => {
+      try {
+        if (!isChallenge(document)) {
+          lastError = null;
+          reopen();
+        }
+      } catch { /* DOM unreadable: stay on the error card */ }
+    }, 1000);
   });
   obs.observe(document.documentElement, { childList: true, subtree: true });
   void obs;

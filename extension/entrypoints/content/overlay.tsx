@@ -9,13 +9,15 @@ import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 export type Theme = 'dark' | 'ambient' | 'sepia' | 'light';
-export type ExtractError = 'empty' | 'boilerplate' | 'challenge' | 'image-only';
+export type ExtractError = 'empty' | 'boilerplate' | 'challenge' | 'locked' | 'image-only';
 
 export interface OverlayProps {
   sentences: string[];
   activeIdx: number;
   chapterTitle?: string;
   novelTitle?: string | null;
+  author?: string | null;
+  fallbackNotice?: boolean;
   theme?: Theme;
   focusSpan?: 1 | 3 | 5;
   error?: { code: ExtractError; detail: string } | null;
@@ -53,6 +55,7 @@ export const ERROR_COPY: Record<ExtractError, { title: string; body: string }> =
   empty: { title: 'Nothing to read here', body: 'No chapter text found on this page. Open a chapter page and try again.' },
   boilerplate: { title: 'Page not recognized', body: 'This page does not look like a chapter. Open a chapter page and try again.' },
   challenge: { title: 'Blocked by a bot check', body: 'Solve the check on the page, then press Retry.' },
+  locked: { title: 'Sign-in required', body: 'This chapter sits behind a login or paywall. Sign in on the page, then press Retry.' },
   'image-only': { title: 'Scanned pages', body: 'This chapter is images, not text. OCR is not supported yet.' },
 };
 
@@ -111,6 +114,7 @@ export function Overlay(p: OverlayProps) {
           <h2>{copy.title}</h2>
           <p>{copy.body}</p>
           {p.error.code === 'challenge' && <button onClick={p.onRetry}>Retry</button>}
+          {p.error.code === 'locked' && <button onClick={p.onRetry}>Retry</button>}
           <button onClick={p.onExit}>Close</button>
         </div>
       </div>
@@ -145,8 +149,8 @@ export function Overlay(p: OverlayProps) {
       )}
       <div className="inktts-bar">
         <span className="inktts-progress" data-testid="chapter-position">{p.activeIdx + 1} / {p.sentences.length}</span>
-        <span className="inktts-title" data-testid="chapter-title" title={p.novelTitle ?? undefined}>
-          {p.novelTitle ? `${p.novelTitle} — ` : ''}{p.chapterTitle || ''}
+        <span className="inktts-title" data-testid="chapter-title" title={[p.novelTitle, p.author ? `by ${p.author}` : ''].filter(Boolean).join(' ') || undefined}>
+          {p.novelTitle ? `${p.novelTitle} — ` : ''}{p.chapterTitle || ''}{p.author ? ` · ${p.author}` : ''}
         </span>
         {p.loading && <span className="inktts-progress" data-testid="loading">{p.loadingStage === 'manifest' ? 'Rendering audio…' : 'Starting player…'}</span>}
         {(p.phase === 'playing') ? (
@@ -156,8 +160,8 @@ export function Overlay(p: OverlayProps) {
         ) : (p.phase === 'paused' || p.phase === 'idle') ? (
           <button className="inktts-primary" onClick={p.onPlay} aria-label={p.phase === 'idle' ? 'Play' : 'Resume'}>{p.phase === 'idle' ? 'Play' : 'Resume'}</button>
         ) : null}
-        <button onClick={p.onPrev} aria-label="Previous sentence" disabled={p.phase !== 'playing' && p.phase !== 'paused'}>|&#9664;</button>
-        <button onClick={p.onNextSentence} aria-label="Next sentence" disabled={p.phase !== 'playing' && p.phase !== 'paused'}>&#9654;|</button>
+        <button onClick={p.onPrev} aria-label="Previous sentence" disabled={p.sentences.length === 0}>|&#9664;</button>
+        <button onClick={p.onNextSentence} aria-label="Next sentence" disabled={p.sentences.length === 0}>&#9654;|</button>
         <button onClick={p.onPrevChapter} aria-label="Previous chapter" title="Previous chapter" disabled={!p.prevUrl}>&#171;</button>
         <button onClick={p.onNextChapter} aria-label="Next chapter" title="Next chapter" disabled={!p.nextUrl}>&#187;</button>
         <button onClick={p.onCycleSpeed} aria-label="Playback speed" title="Playback speed" disabled={p.phase !== 'playing' && p.phase !== 'paused'}>{(p.rate ?? 1).toFixed(2).replace(/0$/, '')}x</button>
@@ -167,6 +171,11 @@ export function Overlay(p: OverlayProps) {
       </div>
       {panelOpen && (
         <div className="inktts-panel" data-testid="settings-panel">
+          {p.fallbackNotice && (
+            <div className="inktts-panel-row" data-testid="fallback-note">
+              <span>Generic extraction — site rule missed this page</span>
+            </div>
+          )}
           <div className="inktts-panel-row">
             <span>Theme</span>
             <div className="inktts-swatches">
@@ -260,7 +269,7 @@ export function Overlay(p: OverlayProps) {
         <div className="inktts-endcard" data-testid="endcard">
           <h2>Finished</h2>
           {p.novelTitle || p.chapterTitle ? (
-            <p>{[p.novelTitle, p.chapterTitle].filter(Boolean).join(' — ')}</p>
+            <p>{[p.novelTitle, p.chapterTitle].filter(Boolean).join(' — ')}{p.author ? ` · by ${p.author}` : ''}</p>
           ) : null}
           <div className="inktts-endcard-row">
             {p.prevUrl ? <button onClick={p.onPrevChapter}>Previous chapter</button> : null}
