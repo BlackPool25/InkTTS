@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "strict": true,
     "skipLibCheck": true,
-    "types": ["chrome"]
-  }
+    "types": ["chrome", "vite/client"]
+  },
+  "include": [".wxt/types/imports.d.ts", "entrypoints", "tests"]
 }
