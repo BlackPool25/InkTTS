@@ -1,1 +1,0 @@
-const s={serverUrl:"",voice:"af_heart",speed:1,model:"kokoro",perSite:{}};async function e(){const t=await chrome.storage.local.get("inkcast.settings");return{...s,...t["inkcast.settings"]??{}}}async function a(t){await chrome.storage.local.set({"inkcast.settings":t})}export{s as D,e as l,a as s};

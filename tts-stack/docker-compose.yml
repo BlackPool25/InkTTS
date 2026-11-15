@@ -84,7 +84,39 @@ services:
       options: { max-size: "10m", max-file: "3" }
     profiles: ["cleaner"] # opt-in: up only when the LLM fallback is wanted
 
+  orchestrator:
+    # Thin routing layer (ours): preempt queue, cache, LRC, SSE, OpenAI shim.
+    # Joined in plan Task 4; single LAN-open port (the extension's URL).
+    build: ./orchestrator
+    image: inkcast-orchestrator:latest
+    container_name: inkcast-orchestrator
+    restart: unless-stopped
+    ports:
+      - "${ORCH_PORT:-8095}:8095"
+    environment:
+      ORCH_PORT: ${ORCH_PORT:-8095}
+      KOKORO_URL: http://kokoro:8880
+      CHATTERBOX_URL: http://chatterbox:8004
+      CACHE_DIR: /data/cache
+      CACHE_CAP_GB: ${CACHE_CAP_GB:-5}
+      EVICT_IDLE_MIN: ${EVICT_IDLE_MIN:-10}
+    volumes:
+      - orch-cache:/data/cache
+    depends_on:
+      kokoro:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8095/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
 volumes:
   hf-cache: # shared: updates never re-download weights
   chatterbox-models:
   cleaner-models:
+  orch-cache:

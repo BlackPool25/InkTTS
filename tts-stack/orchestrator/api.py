@@ -21,6 +21,7 @@ from .queue import Queue, PREFETCH_K
 
 RING_N = 200
 EVICT_IDLE_MIN = int(os.environ.get("EVICT_IDLE_MIN", "10"))
+CACHE = None  # wired by server.start(): the live Cache instance
 
 app = FastAPI(title="inkcast-tts-orchestrator")
 app.add_middleware(
@@ -51,12 +52,22 @@ def health():
 
 @app.post("/manifest")
 def manifest(body: dict):
+    from . import server as _srv
     doc = body.get("doc_id", "")
-    for s in body.get("sentences", []):
+    sents = body.get("sentences", [])
+    _srv.DOC_TEXT[doc] = sents
+    _srv.DOC_META[doc] = {
+        "voice": body.get("voice", "af_heart"),
+        "speed": float(body.get("speed", 1.0)),
+        "model": body.get("model", "kokoro"),
+        "dict_ver": body.get("dict_ver", "d1"),
+        "tag": body.get("engine_tag", "kokoro-v0.10.0"),
+    }
+    for s in sents:
         queue.push(doc, s["idx"], "prefetch", playheads.get(doc, 0))
     playheads.setdefault(doc, 0)
-    emit(doc, "manifest", n=len(body.get("sentences", [])))
-    return {"doc_id": doc, "accepted": len(body.get("sentences", []))}
+    emit(doc, "manifest", n=len(sents))
+    return {"doc_id": doc, "accepted": len(sents)}
 
 
 @app.post("/tap")
@@ -71,8 +82,7 @@ def tap(body: dict):
 
 @app.get("/audio/{h}")
 def audio(h: str):
-    from . import cache as _cache  # late import: needs CACHE_DIR at runtime
-    path = _cache.CACHE.lookup(h) if hasattr(_cache, "CACHE") else None
+    path = CACHE.lookup(h) if CACHE is not None else None
     if not path:
         queue.push("unknown", 0, "tap")
         return JSONResponse({"error": "not-cached", "requeued": True},
