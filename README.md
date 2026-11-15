@@ -1,15 +1,23 @@
-# InkTTS — LAN Novel Read-Along
+<p align="center">
+  <img src="docs/assets/logo.png" alt="InkTTS logo — a pen nib flowing into an audio waveform" width="128" />
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform: Linux x86_64](https://img.shields.io/badge/platform-linux%20x86__64-blue.svg)]()
-[![GPU: Vulkan / Mesa](https://img.shields.io/badge/GPU-Vulkan%20Mesa%20RADV-orange.svg)]()
-[![Engines: GGUF, no torch](https://img.shields.io/badge/engines-GGUF%20only-green.svg)]()
-[![Extension: Chrome MV3](https://img.shields.io/badge/extension-Chrome%20MV3-red.svg)]()
+<h1 align="center">InkTTS — LAN Novel Read-Along</h1>
 
-> Read light novels on their websites, narrated by local AI voices with a
-> read-along highlight that follows the audio. One Docker stack on your LAN
-> renders the audio; a Chrome extension turns any chapter page into a
-> focused, immersive reader.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/badge/platform-linux%20x86__64-blue.svg" alt="Platform: Linux x86_64" />
+  <img src="https://img.shields.io/badge/GPU-Vulkan%20Mesa%20RADV-orange.svg" alt="GPU: Vulkan / Mesa" />
+  <img src="https://img.shields.io/badge/engines-GGUF%20only-green.svg" alt="Engines: GGUF, no torch" />
+  <img src="https://img.shields.io/badge/extension-Chrome%20MV3-red.svg" alt="Extension: Chrome MV3" />
+</p>
+
+<p align="center">
+  Read light novels on their websites, narrated by local AI voices with a
+  read-along highlight that follows the audio. One Docker stack on your LAN
+  renders the audio; a Chrome extension turns any chapter page into a
+  focused, immersive reader.
+</p>
 
 Topics: `text-to-speech` · `tts` · `kokoro` · `chatterbox` · `gguf` · `read-along` · `chrome-extension` · `novel-reader` · `lan-server` · `vulkan`
 
