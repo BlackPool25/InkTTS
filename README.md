@@ -1,145 +1,91 @@
-# InkCast
+# InkCast — LAN Novel Read-Along (GGUF TTS + Chrome Extension)
 
-Self-hosted light-novel + Kokoro TTS platform for one household on its own LAN.
-Point lncrawl at a novel, InkCast renders every chapter to immutable Opus audio
-with sentence-exact sidecars, and an OpenReader PWA fork reads along with
-word-level highlight. No accounts server, no cloud, no GPU: FastAPI + SQLite +
-lncrawl sidecar behind an Authelia/Caddy login wall, sync via encrypted backup
-ZIP.
+Read light novels on their websites, narrated by local AI voices with
+karaoke-style highlighting. One Docker stack on your LAN renders audio;
+a Chrome extension turns any chapter page into a focused reader.
 
-**Why this shape (the 20 locks, condensed):** zero auth code in app (premade
-wall); single SQLite file (portable backup ZIP, no PG until measured
-contention); lncrawl as dumb fetcher behind our content gate/scheduler (no
-weekly parser rot, no GPL vendoring); Kokoro-82M ONNX CPU only (no cloning, no
-GPU); timings measured from shipped Opus bytes (Opus padding shifts estimates);
-full-chapter re-synth, never diff (positional `sent_id` + diff-merge corrupted
-more than it saved); `render_key` pinned per chapter (a voice change must never
-storm the library). Full rationale: `.omo/plans/inkcast.md`, `ARCHITECTURE.md`.
+- **Engines (GGUF, no torch):** Kokoro-82M Q8 (fast, CPU) + Chatterbox
+  Turbo Q8 (expressive, GPU) via a single CrispASR binary. ~1 GB total,
+  not ~20 GB.
+- **Server:** tiny FastAPI orchestrator — preempt render queue, per-sentence
+  Opus cache, Enhanced-LRC timings, SSE progress, OpenAI-compat shim.
+- **Extension (Manifest V3):** Readability extraction with loud gates,
+  full-takeover card-lyrics overlay, immersive focus mode, karaoke fill,
+  click-to-seek, per-site voice/model overrides.
 
-```mermaid
-flowchart LR
-  PWA[OpenReader PWA] -->|cookie| C[Caddy :80]
-  C -->|forward-auth| A[Authelia]
-  C -->|allow| API[FastAPI /api/v1]
-  API --> R[render: Kokoro + Opus]
-  API -.docker exec.-> L[lncrawl sidecar]
-  R -->|Opus + manifest| PWA
-```
+## Repo layout
 
-## Features (v1)
+- `tts-stack/` — `docker-compose.yml`, `crisp/` (engine image), `orchestrator/`
+  (queue/cache/text pipeline/API), `proof/` (server E2E evidence).
+- `extension/` — WXT + Preact source, `proof/` (browser E2E + screenshots).
+- `docs/` — `ARCHITECTURE.md` (full internals), `superpowers/` (design docs + plans).
 
-- **Crawl:** lncrawl 4.14.0 sidecar via `docker exec`, validate-then-commit
-  content gate, error classes (blocked/empty/parse/transient), source
-  quarantine, per-chapter / per-novel / per-source refetch.
-  ([crawl flow](docs/flows/crawl.md))
-- **Render:** Kokoro-82M ONNX CPU, regex pron-dict pre-replace, sentence
-  splitter (abbrev safelist + CJK), per-sentence PCM -> Opus 32k mono 24kHz,
-  gapless manifest (`next.t_start == prev.t_end`).
-  ([render flow](docs/flows/render.md))
-- **Read-along:** static OpenReader fork, manifest binary-search highlight
-  <200ms, tap-to-seek, tab leader, `pagehide` snapshot, offline error state.
-  ([playback](docs/flows/playback.md))
-- **OPDS 1.2 + M4B:** token-exempt catalog/search for KOReader, per-book M4B
-  (AAC-LC 64k mono, ffmetadata chapters, +43ms priming shift).
-  ([opds-m4b](docs/flows/opds-m4b.md))
-- **Backup sync:** age-encrypted ZIP (DB + sidecars + covers, no audio),
-  staging LWW merge, double-import idempotent, restore drill.
-  ([backup](docs/flows/backup.md))
-- **Voice suite:** 6-voice ABX shortlist (`ops/ABX.md`), per-character
-  voice-map, pron-dict union merge.
-- **Hardening gates:** Range 206 curl, RTF p50<=0.7, solver check, restore
-  drill, ABX build — exact commands in
-  ([HARDENING](docs/ops/HARDENING.md)).
+## Install (GPU host: AMD 7900 GRE class, or any x86_64 Linux)
 
-## Quickstart
-
-Needs: Docker + Compose, `.env` filled (see below). From repo root:
+Prereqs: Docker Engine, `/dev/dri` present (Mesa RADV). No ROCm toolkit, no
+CUDA, no Python needed on the host.
 
 ```bash
-docker compose config > /tmp/inkcast-config.yml && echo CONFIG_OK
-docker compose up -d --build
-docker compose ps
-curl -s http://127.0.0.1:8000/api/v1/health
+cd tts-stack && cp .env.example .env
+docker compose up -d --build kokoro orchestrator   # phase 1: Kokoro now
+curl http://localhost:8095/health                  # -> {"status":"ready",...}
+./update.sh   # prints your LAN URL, e.g. http://192.168.1.50:8095
+docker compose up -d --build chatterbox              # phase 2: expressive voice
 ```
 
-Same commands as `ops/BOOT_CHECK.md` (the wall checks live there). Then:
+First boot downloads ~1 GB of GGUFs once into the `crisp-models` volume.
+`update.sh` = pull + rebuild + print URL. No Watchtower (manual updates).
 
-1. Copy `.env.example` -> `.env`, fill `API_TOKEN` + three `AUTHELIA_*`
-   secrets (all required — backend fail-closes without `API_TOKEN`).
-2. Hash a password into `ops/users_database.yml`:
-   `docker run --rm authelia/authelia:4.39 authelia crypto hash generate argon2 --password 'YOUR_PASSWORD'`
-3. Open `http://<host-lan-ip>/` in a browser, log in via Authelia
-   (30-day session). API at `http://<host-lan-ip>/api/v1/books`.
-4. Mint a per-device OPDS token for KOReader (no login possible there):
-   see `ops/BOOT_CHECK.md` step 4, full flow in
-   [opds-m4b](docs/flows/opds-m4b.md).
+Extension (desktop Chrome): `pnpm install && pnpm build` in `extension/`,
+then `chrome://extensions` → Developer mode → Load unpacked →
+`extension/.output/chrome-mv3`. Paste the LAN URL in the popup, Test
+connection, open a chapter, press the extension button, play.
 
-Config reference: every variable in [docs/ops/CONFIG.md](docs/ops/CONFIG.md).
+## Use
 
-## Backup sync (phone <-> server, no accounts)
+- **Overlay:** current sentence large/white, neighbors dimmed, auto-follow.
+  Click any sentence to seek. `Focus` = immersive (prev/current/next only).
+  `Aa` = karaoke word fill. `Theme` cycles dark/ambient/sepia/light. Esc exits.
+- **Settings (options page):** global voice/speed/model, theme, karaoke,
+  focus span, immersive-on-open, per-site overrides (JSON), pronunciation
+  rules (`PATTERN => say-as`), site extraction-rule overrides.
+- **End of chapter:** end card with Play-next-chapter (uses extracted link).
+  Image-only chapters, bot walls, empty pages: loud error states, never
+  silent narration.
+
+## Voices & models
+
+- Kokoro: `af_heart` default; any `kokoro-voice-*.gguf` pack dropped next to
+  the model file becomes selectable (orchestrator maps UI name → filename).
+- Chatterbox: server default voice; per-request reference-audio voices are
+  a future upload flow. No cloning ever.
+- Text pipeline: site-rule container → Readability fallback → strips →
+  promo sweep → next-page stitch (cap 5) → gates (short/boilerplate/
+  challenge/image-only) → split → normalize (numbers/abbrevs/acronyms) →
+  pron-dict → ≤200-char/≤40-word request budget → per-sentence Opus +
+  Enhanced-LRC (word tags Kokoro, line-sweep Chatterbox).
+
+## Verify
 
 ```bash
-# export (API_TOKEN required) -> age-encrypted ZIP, audio excluded
-curl -X POST -H "Authorization: Bearer $API_TOKEN" \
-  http://127.0.0.1/api/v1/admin/backup -o inkcast-backup.zip
+cd tts-stack && python3 -m pytest orchestrator/tests/ -q   # 28 tests
+cd ../extension && pnpm vitest run && pnpm typecheck && pnpm build
+CACHE_DIR=/tmp/e2e PYTHONPATH=tts-stack python3 tts-stack/proof/e2e_live.py
+python3 extension/proof/browser_e2e_pw.py   # needs Playwright Chromium
 ```
 
-Import on the second device through the UI or API; merge is field-level LWW
-in staging, voice-map per-character-key, pron-dict record union, progress
-clamped on `text_hash` change with orphan flag. Re-importing the same file is
-a no-op. Full rules: [backup flow](docs/flows/backup.md).
+Proof artifacts: `tts-stack/proof/SERVER_E2E.md`, `extension/proof/BROWSER_E2E.md`
++ screenshots.
 
-## OPDS + KOReader
+## Troubleshooting
 
-1. Mint token (BOOT_CHECK step 4).
-2. In KOReader: add catalog
-   `http://<host-lan-ip>/api/v1/opds/catalog.xml?token=<TOKEN>`.
-3. Search works at `/api/v1/opds/search?q=...&token=<TOKEN>`; per-book
-   audiobook at `/api/v1/opds/books/<id>.m4b?token=<TOKEN>`.
-
-## Voice ABX (pick the narrator by ear)
-
-Build the 6 clips with the command in `docs/ops/HARDENING.md` gate 5,
-shuffle blind, score clarity/fatigue/fit/consistency per `ops/ABX.md`, record
-the winner as default voice (`PUT /api/v1/voices`). Never ABX on stub-tone
-output (voice-identical without the model).
-
-## Hardening gates (prove it, don't claim it)
-
-| Gate | Command | Evidence |
-|------|---------|----------|
-| Range 206 + If-Range | curl `-H 'Range: bytes=0-99'` | `206` + `Content-Range` |
-| RTF p50 <= 0.7 | bench snippet | bench stdout |
-| Solver check | `docker exec inkcast-lncrawl crawl --help` + classify asserts | quarantine jobs row |
-| Restore drill | export/import round-trip | `IMPORT_2_IDEMPOTENT_OK` |
-| 6-voice ABX | render 6 clips | `/tmp/abx/*.opus` + score sheet |
-
-All five: exact commands in [HARDENING](docs/ops/HARDENING.md);
-fast proof `python3 -m pytest backend/tests/test_hardening.py -q`.
-
-## Repo map
-
-```
-backend/app/        FastAPI: main, db, models, render, tts, gate, jobs,
-                    scraper/, scheduler, refetch, playback, progress,
-                    opds, m4b, backup, merge, auth, pron
-backend/alembic/    migrations (upgrade head idempotent)
-frontend/           OpenReader fork (static build served from /app/frontend/dist)
-ops/                Caddyfile, authelia-config.yml, BOOT_CHECK.md, ABX.md
-docs/flows/         crawl, render, playback, backup, auth, opds-m4b, deployment
-docs/ops/           auth-wall, HARDENING, CONFIG
-docs/data/model.md  ER + field rules + sidecar v2 schema + storage invariants
-docs/API.md         frozen route table (mirrors openapi.yaml)
-openapi.yaml        route table source of truth — path changes break UI+OPDS
-docker-compose.yml  caddy + authelia + backend + lncrawl (+ tailscale profile)
-```
-
-Full data model: [docs/data/model.md](docs/data/model.md).
-API table: [docs/API.md](docs/API.md).
-Deployment: [docs/flows/deployment.md](docs/flows/deployment.md).
-
-## Contributing / License
-
-Build order is Waves (foundation first, then parallel, then integration) with
-per-task gates — see [CONTRIBUTING.md](CONTRIBUTING.md). License: MIT
-([LICENSE](LICENSE)).
+- `chatterbox` unhealthy on AMD: needs `/dev/dri` + `video`/`render` groups;
+  falls back to CPU automatically (slow). NVIDIA hosts: use the CUDA build
+  path instead (see ARCHITECTURE.md).
+- Extension can't reach server: LAN IP changes (DHCP) — rerun `update.sh`;
+  check firewall on 8095; Test-connection in the popup distinguishes
+  DNS/timeout/refused.
+- Challenge page: solve it in the tab, press Retry — overlay listens for
+  the wall clearing.
+- Wrong-language/garbage narration: extraction gates fail loud by design;
+  per-site selector overrides live in options.

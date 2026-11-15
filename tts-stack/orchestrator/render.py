@@ -56,6 +56,19 @@ def _post(url: str, payload: bytes, timeout: float = TIMEOUT_S) -> bytes:
     raise RenderError("transient", f"POST {url} failed x{MAX_RETRIES+1}: {last}")
 
 
+def _voice_for(model: str, voice: str) -> str | None:
+    """Map UI voice names to engine voice params.
+    Kokoro (crispasr): voice packs are files ``kokoro-voice-<name>.gguf``
+    resolved from the server CWD (model dir). Chatterbox: server default
+    voice (per-request reference-audio voices are a future upload flow)."""
+    if model == "kokoro":
+        v = (voice or "af_heart").strip() or "af_heart"
+        if v.endswith(".gguf"):
+            return v
+        return f"kokoro-voice-{v}.gguf"
+    return None
+
+
 def render_sentence(text: str, voice: str, speed: float, model: str,
                     doc: str, breaker: Breaker,
                     kokoro_url: str, chatterbox_url: str,
@@ -66,10 +79,14 @@ def render_sentence(text: str, voice: str, speed: float, model: str,
         raise RenderError("poison", f"unrenderable sentence ({len(text)} chars)")
     use_chatter = model == "chatterbox" and not breaker.tripped(doc)
     engine_url = chatterbox_url if use_chatter else kokoro_url
-    body = json.dumps({"model": model, "input": text, "voice": voice,
-                       "speed": speed, "response_format": "opus"}).encode()
+    req_voice = _voice_for("chatterbox" if use_chatter else "kokoro", voice)
+    body = {"model": model, "input": text,
+            "speed": speed, "response_format": "opus"}
+    if req_voice is not None:
+        body["voice"] = req_voice
+    payload = json.dumps(body).encode()
     try:
-        raw = post(engine_url + "/v1/audio/speech", body)
+        raw = post(engine_url + "/v1/audio/speech", payload)
         breaker.record(doc, True)
         # Real servers return audio bytes; word timings arrive via the
         # captioned endpoint (wired in api.py). Words=None unless supplied.
@@ -81,7 +98,12 @@ def render_sentence(text: str, voice: str, speed: float, model: str,
         if use_chatter:
             # Immediate loud fallback to Kokoro for THIS sentence; the
             # breaker opens after CIRCUIT_TRIPS and routes the doc.
-            raw = post(kokoro_url + "/v1/audio/speech", body)
+            # Rebuild the body with the Kokoro voice mapping (the chatter
+            # body carries no voice field).
+            kokoro_body = dict(body)
+            kokoro_body["voice"] = _voice_for("kokoro", voice) or "af_heart"
+            raw = post(kokoro_url + "/v1/audio/speech",
+                       json.dumps(kokoro_body).encode())
             return {"audio": raw, "dur_ms": 0, "words": None,
                     "degraded": True, "synthetic": False,
                     "engine": kokoro_url, "fallback_of": e.error_class}

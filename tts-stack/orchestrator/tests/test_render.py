@@ -79,3 +79,22 @@ def test_identical_rerender_is_cache_hit():
     k1 = canonical_key("Hello world.", "kokoro-v0.10.0", "af_heart", 1.0, "d1")
     k2 = canonical_key("Hello world.", "kokoro-v0.10.0", "af_heart", 1.0, "d1")
     assert k1 == k2
+
+
+def test_voice_mapping_kokoro_filename_chatterbox_omitted():
+    import json
+    from orchestrator.render import _voice_for, render_sentence, Breaker
+    assert _voice_for("kokoro", "af_heart") == "kokoro-voice-af_heart.gguf"
+    assert _voice_for("kokoro", "") == "kokoro-voice-af_heart.gguf"
+    assert _voice_for("chatterbox", "emily") is None
+    seen = {}
+    def post(url, body):
+        seen.update(json.loads(body))
+        return b"X"
+    render_sentence("Hi.", "af_heart", 1.0, "kokoro", "d",
+                    Breaker(), "http://k", "http://c", post=post)
+    assert seen["voice"] == "kokoro-voice-af_heart.gguf"
+    seen.clear()
+    render_sentence("Hi.", "emily", 1.0, "chatterbox", "d",
+                    Breaker(), "http://k", "http://c", post=post)
+    assert "voice" not in seen

@@ -1,4 +1,11 @@
-# Server E2E evidence (2026-11-15, live Kokoro container)
+# Server E2E evidence
+
+## GGUF stack (current, 2026-11-15) — CrispASR Vulkan, both engines in containers
+- `POST /manifest` + `POST /tap` per model, polled `/events`, fetched audio:
+- kokoro → **200, 41056 bytes, `OggS`**; chatterbox (GPU) → **200, 65384 bytes, `OggS`**
+- Voice mapping proven: UI name → `kokoro-voice-<name>.gguf` (server CWD = model dir)
+
+## Legacy runs (superseded Kokoro-FastAPI backend, kept for the record)
 
 Run 1 (local uvicorn + live Kokoro): manifest accepted 3, tap queued,
 2 ready in 60s, audio 200 + 65088 bytes Ogg.

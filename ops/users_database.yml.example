@@ -1,9 +1,0 @@
-# BOOTSTRAP: generate the argon2 hash, then replace the placeholder below:
-#   docker run --rm authelia/authelia:4.39 authelia crypto hash generate argon2 --password 'YOUR_PASSWORD'
-# One user is enough (single-user box). Restart the authelia service after editing.
-users:
-  reader:
-    displayname: Reader
-    email: reader@lan.local
-    password: $argon2id$v=19$m=65536,t=3,p=4$REPLACE_ME_SEE_BOOTSTRAP
-    groups: []

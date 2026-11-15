@@ -2,60 +2,56 @@ name: inkcast-tts
 
 services:
   kokoro:
-    # CPU ONNX path: always warm, zero VRAM. Pinned release (no :latest).
-    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0
+    # CrispASR GGUF kokoro-82m-q8: tiny, CPU, always warm. Replaces the
+    # 2GB Kokoro-FastAPI image. Models auto-download into crisp-models.
+    build: ./crisp
+    image: inkcast-crisp:latest
     container_name: inkcast-kokoro
     restart: unless-stopped
+    command: ["--backend", "kokoro", "-m", "auto",
+              "--voice", "/data/.cache/crispasr/kokoro-voice-af_heart.gguf",
+              "--voice-dir", "/data/.cache/crispasr",
+              "--host", "0.0.0.0", "--port", "8880"]
     ports:
       - "127.0.0.1:8880:8880" # internal only; orchestrator is the LAN front
     volumes:
-      - hf-cache:/root/.cache/huggingface
-    environment:
-      HF_HOME: /root/.cache/huggingface
+      - crisp-models:/data
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8880/docs')\""]
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8880'"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 180s # first boot downloads ~500MB of GGUFs
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
   chatterbox:
-    # Turbo default (see upstream config.yaml model.repo_id). Built from
-    # source — no prebuilt image exists. GPU lazy: idle-evict handled by
-    # orchestrator via /api/unload (evict lease in plan Task 1).
-    build:
-      context: https://github.com/devnen/Chatterbox-TTS-Server.git#main
-      dockerfile: Dockerfile.cu128
-      args:
-        RUNTIME: nvidia
-    image: inkcast-chatterbox:cu128
+    # CrispASR GGUF chatterbox (Turbo-class) on AMD Vulkan: full GPU via
+    # FORCE_GPU. Replaces the torch server. Same crisp image as kokoro.
+    build: ./crisp
+    image: inkcast-crisp:latest
     container_name: inkcast-chatterbox
     restart: unless-stopped
+    command: ["--backend", "chatterbox", "-m", "auto",
+              "--host", "0.0.0.0", "--port", "8004"]
+    environment:
+      CRISPASR_CHATTERBOX_FORCE_GPU: "1"
     ports:
       - "127.0.0.1:8004:8004" # internal only
     volumes:
-      - chatterbox-models:/app/model_cache
-      - hf-cache:/app/hf_cache
-    environment:
-      HF_TOKEN: ${HF_TOKEN:-}
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+      - crisp-models:/data
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "39"
+      - "105"
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8004/')\""]
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8004'"]
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 600s # first boot downloads Turbo weights
+      start_period: 300s # first boot downloads GGUFs
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
@@ -116,7 +112,6 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
 volumes:
-  hf-cache: # shared: updates never re-download weights
-  chatterbox-models:
+  crisp-models: # GGUFs + voices: auto-downloaded once, shared by both engines
   cleaner-models:
   orch-cache:
