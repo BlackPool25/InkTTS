@@ -82,6 +82,8 @@ def main():
             page.wait_for_timeout(1000)
         assert ours, "our service worker never appeared"
         print("worker: ours")
+        eid = ours.evaluate("() => chrome.runtime.id")
+        print("extension id:", eid[:8] + "…")
 
         ours.evaluate(
             """async () => {
@@ -115,6 +117,38 @@ def main():
         page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/overlay.png")
         print("screenshot saved: proof/overlay.png")
 
+        # Modes: immersive -> 3 lines only; theme cycle; karaoke fill.
+        click = """(text) => {
+          const h = document.getElementById('inkcast-overlay-host');
+          const btns = [...h.shadowRoot.querySelectorAll('button')];
+          const b = btns.find(x => x.textContent.includes(text));
+          if (!b) throw new Error('no button ' + text);
+          b.click();
+        }"""
+        page.evaluate(f"({click})('Focus')")
+        page.wait_for_timeout(800)
+        n_imm = page.evaluate(
+            "() => document.getElementById('inkcast-overlay-host')"
+            ".shadowRoot.querySelectorAll('[data-testid=line],[data-testid=line-active]').length")
+        print("immersive lines:", n_imm)
+        assert n_imm == 3, f"immersive should show 3, got {n_imm}"
+        page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/overlay-immersive.png")
+        page.evaluate(f"({click})('Theme')")
+        page.wait_for_timeout(400)
+        cls = page.evaluate(
+            "() => document.getElementById('inkcast-overlay-host')"
+            ".shadowRoot.querySelector('[data-testid=overlay]').className")
+        print("theme class:", cls)
+        assert "ink-theme-ambient" in cls, "theme did not cycle to ambient"
+        page.evaluate(f"({click})('Aa')")
+        page.wait_for_timeout(400)
+        fill = page.evaluate(
+            "() => !!document.getElementById('inkcast-overlay-host')"
+            ".shadowRoot.querySelector('.ink-fill')")
+        print("karaoke fill element:", fill)
+        assert fill, "karaoke fill element missing"
+        page.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/overlay-karaoke.png")
+
         page.goto(f"http://127.0.0.1:{port}/blocked.html")
         page.wait_for_timeout(1500)
         ours.evaluate(
@@ -130,6 +164,16 @@ def main():
         print("challenge overlay:", (err or "").strip()[:80])
         assert err and "bot check" in err, "challenge did not render loud error"
         print("pageerrors:", errors if errors else "none")
+
+        # Settings pages render (popup + options) — layout proof.
+        popup = ctx.new_page()
+        popup.goto(f"chrome-extension://{eid}/popup.html")
+        page.wait_for_timeout(500)
+        popup.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/popup.png")
+        popup.goto(f"chrome-extension://{eid}/options.html")
+        page.wait_for_timeout(500)
+        popup.screenshot(path="/home/shreyas/projects/InkCast/extension/proof/options.png", full_page=True)
+        print("settings screenshots saved")
         ctx.close()
     print("BROWSER E2E DONE")
 

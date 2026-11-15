@@ -1,8 +1,8 @@
 FROM python:3.12-slim
 WORKDIR /app
-COPY orchestrator/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY orchestrator/ ./orchestrator/
+COPY . ./orchestrator/
 ENV CACHE_DIR=/data/cache ORCH_PORT=8095
 EXPOSE 8095
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=20s \

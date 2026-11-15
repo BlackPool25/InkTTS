@@ -28,6 +28,10 @@ export interface ServerSettings {
   perSite: Record<string, { voice?: string; model?: 'kokoro' | 'chatterbox' }>;
   siteRules?: string;
   pron?: string;
+  theme?: string;
+  karaoke?: boolean;
+  focus?: number;
+  immersiveDefault?: boolean;
 }
 
 export const DEFAULT_SETTINGS: ServerSettings = {

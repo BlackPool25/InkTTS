@@ -7,6 +7,9 @@ Chrome CLI-sideloads nothing — log-verified `ignoring`).
 - overlay mounted: True, sentences rendered: 3
 - active line follows playback; tap sentence -> highlight moves
 - challenge page -> loud error + Retry (never narrated)
+- immersive toggle -> 3 lines only (screenshot proof/overlay-immersive.png)
+- theme cycle -> ambient class applied; karaoke toggle -> fill element present
+- popup + options render with full layout (screenshots proof/popup.png, proof/options.png)
 - pageerrors: none
 - screenshot: proof/overlay.png (card-lyrics, opaque backdrop)
 

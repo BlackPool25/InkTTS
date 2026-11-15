@@ -15,3 +15,6 @@ frontend/dist/
 ops/users_database.yml
 ops/lan-ca.crt
 ops/lan.key
+
+extension/.output/
+extension/node_modules/

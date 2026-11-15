@@ -9,11 +9,18 @@ export default defineContentScript({
   let teardown: (() => void) | null = null;
   let sentences: string[] = [];
   let active = 0;
+  let immersive = false;
+  let karaoke = false;
+  let theme: 'dark' | 'ambient' | 'sepia' | 'light' = 'dark';
+  const THEMES = ['dark', 'ambient', 'sepia', 'light'] as const;
 
   function currentProps() {
     return {
       sentences,
       activeIdx: active,
+      immersive,
+      karaoke,
+      theme,
       onSeek: (idx: number) => {
         active = idx;
         rerenderOverlay(currentProps());
@@ -21,6 +28,18 @@ export default defineContentScript({
       },
       onExit: () => {
         teardown = null;
+      },
+      onToggleImmersive: () => {
+        immersive = !immersive;
+        rerenderOverlay(currentProps());
+      },
+      onToggleKaraoke: () => {
+        karaoke = !karaoke;
+        rerenderOverlay(currentProps());
+      },
+      onCycleTheme: () => {
+        theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+        rerenderOverlay(currentProps());
       },
     };
   }

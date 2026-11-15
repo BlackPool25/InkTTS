@@ -26,6 +26,8 @@ export interface OverlayProps {
   onRetry?: () => void;
   onNext?: () => void;
   onToggleImmersive?: () => void;
+  onToggleKaraoke?: () => void;
+  onCycleTheme?: () => void;
   onTheme?: (t: Theme) => void;
 }
 
@@ -85,6 +87,8 @@ export function Overlay(p: OverlayProps) {
         <button onClick={p.onToggleImmersive} aria-pressed={immersive}>
           {immersive ? 'Exit focus' : 'Focus'}
         </button>
+        <button onClick={p.onToggleKaraoke} aria-pressed={!!p.karaoke} title="Karaoke word fill">Aa</button>
+        <button onClick={p.onCycleTheme} title="Theme">Theme</button>
         <button onClick={p.onExit}>Close (Esc)</button>
       </div>
       <div className="ink-scroll" ref={scroller}>

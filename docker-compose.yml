@@ -5,6 +5,7 @@ services:
     ports:
       - "8085:8085"  # App: https://192.168.29.101:8085 (primary) + nip.io fallback
       - "8443:8443"  # Portal: https://192.168.29.101:8443 (primary) + nip.io fallback
+      - "8090:8090"  # OpenReader fork (phase 1, stock slim): https://192.168.29.101:8090 + read.* nip.io
       - "8081:8080"  # Typo-catcher: http://<host>:8081 -> https://<host>:8085
       # No :443 listener: plain-LAN install has no domain/cert. Add it only
       # with a real hostname (then also flip Authelia cookie secure=true).
@@ -18,6 +19,7 @@ services:
     depends_on:
       - backend
       - authelia
+      - openreader
 
   authelia:
     image: authelia/authelia:4.39
@@ -87,6 +89,57 @@ services:
     volumes:
       - lncrawl-data:/data
 
+  # OpenReader fork phase 1: stock slim build (own Next.js + embedded
+  # worker/nats/weed-mini + kokoro-tts sidecar). Single Authelia wall at Caddy;
+  # anonymous in-app sessions (USE_ANONYMOUS_AUTH_SESSIONS=true). No ports
+  # published — LAN reaches it only via Caddy :8090. Worker audio is same-origin
+  # (COMPUTE_WORKER_PUBLIC_URL = Caddy origin; Caddy proxies /v1/* to :8081).
+  # Phase 2 bridge (our chapter-JSON novels -> document import API) NOT done.
+  openreader:
+    build:
+      context: ./reader
+    restart: unless-stopped
+    depends_on:
+      kokoro-tts:
+        condition: service_started
+    environment:
+      BASE_URL: https://192.168.29.101:8090
+      AUTH_SECRET: ${OPENREADER_AUTH_SECRET:?set in .env}
+      USE_ANONYMOUS_AUTH_SESSIONS: "true"
+      COMPUTE_WORKER_HOST: 0.0.0.0
+      COMPUTE_WORKER_PUBLIC_URL: https://192.168.29.101:8090
+      RUNTIME_SEED_JSON: |-
+        {
+          "version": 1,
+          "runtimeConfig": {
+            "defaultTtsProvider": "kokoro"
+          },
+          "providers": [
+            {
+              "slug": "kokoro",
+              "displayName": "Kokoro",
+              "providerType": "custom-openai",
+              "baseUrl": "http://kokoro-tts:8880/v1",
+              "defaultModel": "kokoro",
+              "enabled": true
+            }
+          ]
+        }
+    volumes:
+      - openreader-docstore:/app/docstore
+
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.4
+    restart: unless-stopped
+    environment:
+      ONNX_NUM_THREADS: 8
+      ONNX_INTER_OP_THREADS: 4
+      ONNX_EXECUTION_MODE: parallel
+      ONNX_OPTIMIZATION_LEVEL: all
+      ONNX_MEMORY_PATTERN: "true"
+      ONNX_ARENA_EXTEND_STRATEGY: kNextPowerOfTwo
+      API_LOG_LEVEL: DEBUG
+
   # Optional remote access: `docker compose --profile remote up -d`
   # Needs a free Tailscale account (one login, personal plan); no ports opened.
   tailscale:
@@ -109,3 +162,4 @@ volumes:
   authelia_data:
   lncrawl-data:
   models:
+  openreader-docstore:  # OpenReader slim docstore (sqlite + weed-mini + nats jetstream)

@@ -69,3 +69,28 @@ https://192.168.29.101:8443, https://auth.192-168-29-101.nip.io:8085 {
 	tls /etc/caddy/certs/lan.crt /etc/caddy/certs/lan.key
 	reverse_proxy authelia:9091
 }
+
+# OpenReader fork, phase 1 (stock slim, full second platform behind OUR wall).
+# Same Authelia forward_auth wall as the app; anonymous in-app sessions
+# (USE_ANONYMOUS_AUTH_SESSIONS=true) so no second login inside. Worker audio is
+# same-origin: /v1/* goes to the embedded compute worker (:8081), everything
+# else to the Next.js app (:3003). No OPDS exemption here (OpenReader has none).
+https://192.168.29.101:8090, https://read.192-168-29-101.nip.io:8090 {
+	tls /etc/caddy/certs/lan.crt /etc/caddy/certs/lan.key
+	# Uniform wall on every path (audio URLs carry their own short-lived HMAC
+	# playback token too, but the wall stays the single gate — no bypass).
+	handle /v1/* {
+		forward_auth authelia:9091 {
+			uri /api/authz/forward-auth
+			copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+		}
+		reverse_proxy openreader:8081
+	}
+	handle {
+		forward_auth authelia:9091 {
+			uri /api/authz/forward-auth
+			copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+		}
+		reverse_proxy openreader:3003
+	}
+}

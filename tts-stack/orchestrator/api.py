@@ -19,11 +19,22 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from .queue import Queue, PREFETCH_K
 
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from . import server as _srv  # lazy: server imports api (cycle)
+    stop = _srv.start()
+    yield
+    stop.set()
+
+
 RING_N = 200
 EVICT_IDLE_MIN = int(os.environ.get("EVICT_IDLE_MIN", "10"))
 CACHE = None  # wired by server.start(): the live Cache instance
 
-app = FastAPI(title="inkcast-tts-orchestrator")
+app = FastAPI(title="inkcast-tts-orchestrator", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # LAN appliance; extension id pinned in docs
