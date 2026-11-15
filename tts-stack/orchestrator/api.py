@@ -64,9 +64,19 @@ def health():
 @app.post("/manifest")
 def manifest(body: dict):
     from . import server as _srv
+    from . import textpipe as _tp
     doc = body.get("doc_id", "")
-    sents = body.get("sentences", [])
-    _srv.DOC_TEXT[doc] = sents
+    incoming = body.get("sentences", [])
+    # Canonical split owner: orchestrator. Clients send paragraphs (or
+    # raw spans); the server splits into synth-sized sentences and returns
+    # the authoritative list. Overlay lines == audio files == LRC lines.
+    paras = [s.get("text", "") if isinstance(s, dict) else str(s)
+             for s in incoming]
+    sentences, problems = _tp.process_chapter(paras)
+    for pr in problems:
+        emit(doc, "skipped", para=(pr.get("para", "")[:60]),
+             error_class=pr.get("error_class", ""))
+    _srv.DOC_TEXT[doc] = sentences
     _srv.DOC_META[doc] = {
         "voice": body.get("voice", "af_heart"),
         "speed": float(body.get("speed", 1.0)),
@@ -74,11 +84,13 @@ def manifest(body: dict):
         "dict_ver": body.get("dict_ver", "d1"),
         "tag": body.get("engine_tag", "kokoro-v0.10.0"),
     }
-    for s in sents:
+    for s in sentences:
         queue.push(doc, s["idx"], "prefetch", playheads.get(doc, 0))
     playheads.setdefault(doc, 0)
-    emit(doc, "manifest", n=len(sents))
-    return {"doc_id": doc, "accepted": len(sents)}
+    emit(doc, "manifest", n=len(sentences))
+    return {"doc_id": doc, "accepted": len(sentences),
+            "sentences": sentences,
+            "problems": problems}
 
 
 @app.post("/tap")

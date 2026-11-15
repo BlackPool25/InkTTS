@@ -32,14 +32,14 @@ INSERT INTO cache_stats(rowid, total_bytes)
   SELECT 1, 0 WHERE NOT EXISTS (SELECT 1 FROM cache_stats WHERE rowid=1);
 """
 
-PIPE_VER = "pipe1"
+PIPE_VER = "pipe2"  # bumped: model joined the key (was missing -> cross-model false hits)
 
 
 def canonical_key(norm_text: str, engine_tag: str, voice: str, speed: float,
-                  dict_ver: str) -> str:
+                  dict_ver: str, model: str = "") -> str:
     speed_q = f"{float(speed):.2f}"
     raw = "|".join([norm_text, engine_tag, voice, speed_q, dict_ver,
-                     PIPE_VER])
+                     PIPE_VER, model])
     return hashlib.sha1(raw.encode()).hexdigest()
 
 

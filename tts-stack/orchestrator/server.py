@@ -31,7 +31,8 @@ def key_for(doc: str, text: str) -> str:
     m = DOC_META.get(doc, {})
     return canonical_key(text, m.get("tag", "kokoro-v0.10.0"),
                          m.get("voice", "af_heart"), m.get("speed", 1.0),
-                         m.get("dict_ver", "d1"))
+                         m.get("dict_ver", "d1"),
+                         m.get("model", "kokoro"))
 
 
 def worker_loop(stop: threading.Event) -> None:

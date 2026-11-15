@@ -52,3 +52,10 @@ def test_image_tag_bump_invalidates(tmp_path):
 def test_speed_quantized(tmp_path):
     assert (canonical_key("t", "e", "v", 1.0, "d1")
             == canonical_key("t", "e", "v", 1.00, "d1"))
+
+
+def test_same_text_different_model_different_key(tmp_path):
+    from orchestrator.cache import canonical_key
+    a = canonical_key("hello world", "e", "v", 1.0, "d1", "kokoro")
+    b = canonical_key("hello world", "e", "v", 1.0, "d1", "chatterbox")
+    assert a != b

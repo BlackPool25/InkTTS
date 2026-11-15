@@ -16,7 +16,9 @@ from .pron import apply, extract_notes, load_rules, normalise
 ABBREV = ("Mr.", "Mrs.", "Ms.", "Dr.", "St.", "Jr.", "Sr.", "vs.",
           "etc.", "e.g.", "i.e.", "Prof.", "Gen.", "Sgt.", "Lt.")
 _SENT_SPLIT = re.compile(r"(?<=[.!?。！？])\s+(?=[\"“‘\(\[]?[A-Z0-9\u4e00-\u9fff])")
-_MAX_SENT_CHARS = 1200
+_MAX_SENT_CHARS = 300  # synth-request budget: ~20s audio max, keeps each
+_CLAUSE_CUT = ",;:—–-"
+# render under the per-sentence timeout on CPU voices.
 MIN_CHARS = 20  # extension text is user-visible: lower floor than scraper
 REQ_MAX_CHARS = 200
 REQ_MAX_WORDS = 40
@@ -74,8 +76,10 @@ def split_sentences(text: str) -> list[str]:
             p = p.replace(f"⟦AB{i}⟧", ab)
         p = p.strip()
         while len(p) > _MAX_SENT_CHARS:
-            cut = p.rfind(",", 0, _MAX_SENT_CHARS)
-            cut = cut if cut > 0 else _MAX_SENT_CHARS
+            cut = -1
+            for cc in _CLAUSE_CUT:
+                cut = max(cut, p.rfind(cc, 0, _MAX_SENT_CHARS))
+            cut = cut + 1 if cut > 0 else _MAX_SENT_CHARS
             out.append(p[:cut].strip())
             p = p[cut:].strip()
         if p:

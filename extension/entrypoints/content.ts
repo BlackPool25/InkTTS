@@ -66,11 +66,31 @@ export default defineContentScript({
       teardown = mountOverlay(props);
       return;
     }
+    // Canonical split owner: orchestrator. Overlay lines == server
+    // sentences == audio files. Fall back to local paragraphs offline.
     sentences = res.paragraphs;
     active = 0;
     teardown = mountOverlay(currentProps());
-    // Prototype pipeline: POST paragraphs to orchestrator for render.
-    // (Full manifest flow lands with server URL settings in Task 5 review.)
+    void (async () => {
+      try {
+        const cfg = await chrome.storage.local.get('inkcast.settings');
+        const base = (cfg['inkcast.settings'] as { serverUrl?: string } | undefined)?.serverUrl?.replace(/\/$/, '');
+        if (!base) return;
+        const r = await fetch(`${base}/manifest`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ doc_id: location.href, sentences: res.paragraphs.map((text) => ({ text })) }),
+        });
+        const man = await r.json();
+        if (Array.isArray(man.sentences) && man.sentences.length > 0) {
+          sentences = man.sentences.map((s: { text: string }) => s.text);
+          active = 0;
+          rerenderOverlay(currentProps());
+        }
+      } catch {
+        /* offline: keep local paragraphs */
+      }
+    })();
     });
   },
 });
